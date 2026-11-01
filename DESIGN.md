@@ -245,8 +245,14 @@ The quiet dashboard. For the focused target:
 
 ## 6. State — one local store, Optio-owned
 
-Optio holds everything in its own store (format decided in the plan — likely
-JSON files, or SQLite if query needs grow). It contains:
+Optio holds everything in its own store, split by XDG data type: config and the
+tool catalog in `~/.config/optio/`, the state store (SQLite) in
+`~/.local/share/optio/`, captured raw tool output in `~/.cache/optio/`. The store
+is **global and keyed by target, not bound to the current directory** — flag
+memory is cross-engagement by nature, so it must follow the operator to the next
+target. One per-target `artifacts_dir` setting points at the operator's own
+engagement tree, so raw files can live beside their other work while the index
+stays global. The store contains:
 
 - **Targets** — the list, plus per-target notes, tech, scope, and the proxy to
   use.
@@ -291,9 +297,18 @@ The problem statement is "track target without many output noise". The rule:
 - Its own repo (`TyrusRC/optio`, Apache-2.0). No runtime dependency beyond the
   operator's own installed tools.
 
-Open implementation points left to the builder and the plan: the catalog
-definition format (YAML/TOML/JSON), the store format (JSON vs SQLite), and the
-summarizer plug-in shape.
+Decided formats (research-backed):
+
+- **Catalog = YAML.** The audience already writes YAML (nuclei templates) and it
+  handles multiline command templates well. One dependency (PyYAML), read-only at
+  runtime.
+- **Store = SQLite** (stdlib `sqlite3`). The coverage ledger is append-heavy and
+  queried ("did tool X run against target Y?"); a single SQLite file is
+  concurrent-safe and avoids the rewrite-races of a JSON blob. Small config stays
+  YAML; the ledger, flag memory, and findings go in SQLite.
+
+Left to the plan: the summarizer plug-in shape, and the catalog entry schema
+detail.
 
 ---
 
@@ -360,14 +375,29 @@ replaces the operator's judgment.
 
 ---
 
-## 11. Open questions for the operator
+## 11. Decided calls (were open; resolved by research)
 
-1. **Store scope.** Flag memory and coverage per engagement directory (`.optio/`
-   beside the work, travels with it) or one global store (`~/.optio/`) keyed by
-   target (recalls across engagements)? Or both, with a switch.
-2. **Starter catalog.** Which tools should the shipped catalog cover first — the
-   core recon/web set (`nmap`, `ffuf`, `httpx`, `nuclei`, `sqlmap`, `katana`,
-   `subfinder`), or a wider arsenal from the start?
-3. **Proxy default.** Should Optio default to routing tool HTTP traffic through a
-   proxy when one is reachable (Burp on `:8080`), or stay direct unless the
-   operator turns a proxy on per target?
+1. **Store scope → global, keyed by target.** The field splits between
+   per-engagement folder trees ([TrustedSec](https://trustedsec.com/blog/workflow-improvements-for-pentesters),
+   [kage](https://skills.sh/workersio/spec/kage), Pensar) and a central user-level
+   store ([pentestcode](https://pypi.org/project/pentestcode/): "global store, NOT
+   per-directory, security work isn't tied to a cwd"). The central store wins for
+   Optio because flag memory is cross-engagement — a cwd-bound store loses your
+   recalled flags the moment you `cd`. Split by
+   [XDG](https://claudeissues.com/issue/2350-follow-xdg-base-directory-specification-properly-move-runtime-cache-files-out-of)
+   data type (§6), with a per-target `artifacts_dir` for raw output that travels
+   with the engagement.
+2. **Starter catalog → narrow core, operator-extensible.** Community lists
+   converge on the ProjectDiscovery stack plus classics
+   ([WebHackersWeapons](https://github.com/pikpikcu/WebHackersWeapons),
+   [top-50](https://www.securitylab.ru/analytics/559686.php)). Ship one tool per
+   job across the flow (~9): `subfinder`, `httpx`, `katana`, `gau`, `ffuf`,
+   `nuclei`, `sqlmap`, `dalfox`, `nmap`. A wider arsenal is a summarizer and
+   maintenance burden with no payoff; the operator grows the catalog from there.
+3. **Proxy default → direct, per-target opt-in, auto-detected.** Silently routing
+   every tool through Burp is a footgun (TLS breaks without the CA, Burp may be
+   down, scan volume floods it). Default direct; detect a reachable proxy on
+   `:8080` and offer a one-key per-target toggle. Explicit, never silent.
+
+These were the operator's three open questions; the research above settles each.
+They remain overridable in the plan.
