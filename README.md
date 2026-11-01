@@ -69,9 +69,10 @@ somewhere else.
 
 Early but runnable. In place: the target and coverage board, the next-action
 advisor (a deterministic, findings-first priority ladder over the flow), flag
-memory, a subprocess runner with optional proxy, and a catalog of ~30 common web
-and network tools. Add your own in `~/.config/optio/catalog/`. The catalog format
-and the UI will still change.
+memory, a subprocess runner with optional proxy, and a catalog of ~34 common web
+and network tools (with `vigil` and `groma` as the default web and network
+scanners). Add your own in `~/.config/optio/catalog/`. The catalog format and the
+UI will still change.
 
 ## Contributing
 

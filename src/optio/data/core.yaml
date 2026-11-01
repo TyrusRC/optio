@@ -76,6 +76,12 @@ tools:
     description: URLs from the Wayback Machine.
 
   # ── network: ports and services on the host ────────────────────────────
+  - name: groma
+    binary: groma
+    lane: network
+    phase: recon
+    template: "groma scan {host}"
+    description: Full-range port scan + service CVE checks (naabu-backed). First network scan.
   - name: nmap
     binary: nmap
     lane: network
@@ -94,24 +100,6 @@ tools:
     phase: recon
     template: "masscan -p1-1000 {host} --rate 1000"
     description: Mass port sweep.
-  - name: netexec
-    binary: netexec
-    lane: network
-    phase: scan
-    template: "netexec smb {host}"
-    description: SMB/AD enumeration and auth checks.
-  - name: enum4linux-ng
-    binary: enum4linux-ng
-    lane: network
-    phase: scan
-    template: "enum4linux-ng {host}"
-    description: SMB / NetBIOS enumeration.
-  - name: smbmap
-    binary: smbmap
-    lane: network
-    phase: scan
-    template: "smbmap -H {host}"
-    description: Enumerate SMB shares and permissions.
 
   # ── surface: endpoints, params, content ────────────────────────────────
   - name: httpx
@@ -164,6 +152,12 @@ tools:
     description: Identify the WAF in front of the app.
 
   # ── scan: broad vulnerability scanners for leads ───────────────────────
+  - name: vigil
+    binary: vigil
+    lane: web-scan
+    phase: scan
+    template: "vigil scan {url}"
+    description: Context-aware web DAST mapped to OWASP WSTG / Top 10 / API / ASVS. First web scan.
   - name: nuclei
     binary: nuclei
     lane: web-scan
@@ -182,6 +176,24 @@ tools:
     phase: scan
     template: "wpscan --url {url}"
     description: WordPress vulnerability scan.
+  - name: netexec
+    binary: netexec
+    lane: network
+    phase: scan
+    template: "netexec smb {host}"
+    description: SMB/AD enumeration and auth checks.
+  - name: enum4linux-ng
+    binary: enum4linux-ng
+    lane: network
+    phase: scan
+    template: "enum4linux-ng {host}"
+    description: SMB / NetBIOS enumeration.
+  - name: smbmap
+    binary: smbmap
+    lane: network
+    phase: scan
+    template: "smbmap -H {host}"
+    description: Enumerate SMB shares and permissions.
 
   # ── probe: confirm high-value classes ──────────────────────────────────
   - name: sqlmap

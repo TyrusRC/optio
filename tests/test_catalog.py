@@ -10,7 +10,8 @@ def test_default_catalog_has_the_starter_tools():
     names = {t.name for t in cat}
     # core web + network arsenal is present (not an exhaustive list)
     assert {"subfinder", "httpx", "katana", "gau", "ffuf", "nuclei",
-            "sqlmap", "dalfox", "commix", "nmap", "naabu", "nikto"} <= names
+            "sqlmap", "dalfox", "commix", "nmap", "naabu", "nikto",
+            "vigil", "groma"} <= names
     assert len(cat) >= 20
 
 
