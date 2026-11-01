@@ -1,53 +1,189 @@
-# Optio starter catalog — one tool per job across the flow.
+# Optio starter catalog — the external CLI tools Optio can run for you.
 # Each entry: name, binary, lane, phase, template, optional classes, description.
-# Placeholders in the template are filled by the launcher from the target:
-#   {domain}  bare host         e.g. example.com
-#   {url}     full URL          e.g. https://example.com
-#   {host}    host[:port]       e.g. example.com
+# Placeholders are filled by the launcher from the target:
+#   {domain}   bare host          example.com
+#   {url}      full URL           https://example.com
+#   {host}     host[:port]        example.com
 #   {wordlist} path to a wordlist
+# This is a starting point, not a limit — drop your own YAML in ~/.config/optio/catalog/.
 tools:
+  # ── recon: map the attack surface ──────────────────────────────────────
   - name: subfinder
     binary: subfinder
     lane: recon
     phase: recon
     template: "subfinder -d {domain} -silent"
     description: Passive subdomain enumeration.
-
-  - name: httpx
-    binary: httpx
+  - name: amass
+    binary: amass
     lane: recon
     phase: recon
-    template: "httpx -u {url} -title -tech-detect -status-code -silent"
-    description: Probe live hosts, titles, and tech stack.
-
-  - name: katana
-    binary: katana
+    template: "amass enum -d {domain}"
+    description: Deep subdomain enumeration (active + passive).
+  - name: assetfinder
+    binary: assetfinder
     lane: recon
-    phase: surface
-    template: "katana -u {url} -silent"
-    description: Crawl the target for endpoints and parameters.
-
+    phase: recon
+    template: "assetfinder --subs-only {domain}"
+    description: Find subdomains from public sources.
+  - name: dnsx
+    binary: dnsx
+    lane: recon
+    phase: recon
+    template: "dnsx -d {domain} -silent"
+    description: Resolve and probe DNS records.
+  - name: asnmap
+    binary: asnmap
+    lane: recon
+    phase: recon
+    template: "asnmap -d {domain} -silent"
+    description: Map the target's ASN and IP ranges.
+  - name: chaos
+    binary: chaos
+    lane: recon
+    phase: recon
+    template: "chaos -d {domain} -silent"
+    description: Subdomains from the ProjectDiscovery Chaos dataset.
+  - name: theharvester
+    binary: theHarvester
+    lane: recon
+    phase: recon
+    template: "theHarvester -d {domain} -b all"
+    description: OSINT — emails, hosts, and names.
+  - name: tlsx
+    binary: tlsx
+    lane: recon
+    phase: recon
+    template: "tlsx -u {host} -silent"
+    description: TLS certificate and SAN enumeration.
+  - name: cdncheck
+    binary: cdncheck
+    lane: recon
+    phase: recon
+    template: "cdncheck -i {domain}"
+    description: Detect CDN / WAF / cloud in front of the host.
   - name: gau
     binary: gau
     lane: recon
     phase: surface
     template: "gau {domain}"
     description: Pull known URLs from public archives.
+  - name: waybackurls
+    binary: waybackurls
+    lane: recon
+    phase: surface
+    template: "waybackurls {domain}"
+    description: URLs from the Wayback Machine.
 
+  # ── network: ports and services on the host ────────────────────────────
+  - name: nmap
+    binary: nmap
+    lane: network
+    phase: recon
+    template: "nmap -sV -Pn {host}"
+    description: Port and service/version scan.
+  - name: naabu
+    binary: naabu
+    lane: network
+    phase: recon
+    template: "naabu -host {host} -silent"
+    description: Fast port discovery.
+  - name: masscan
+    binary: masscan
+    lane: network
+    phase: recon
+    template: "masscan -p1-1000 {host} --rate 1000"
+    description: Mass port sweep.
+  - name: netexec
+    binary: netexec
+    lane: network
+    phase: scan
+    template: "netexec smb {host}"
+    description: SMB/AD enumeration and auth checks.
+  - name: enum4linux-ng
+    binary: enum4linux-ng
+    lane: network
+    phase: scan
+    template: "enum4linux-ng {host}"
+    description: SMB / NetBIOS enumeration.
+  - name: smbmap
+    binary: smbmap
+    lane: network
+    phase: scan
+    template: "smbmap -H {host}"
+    description: Enumerate SMB shares and permissions.
+
+  # ── surface: endpoints, params, content ────────────────────────────────
+  - name: httpx
+    binary: httpx
+    lane: recon
+    phase: surface
+    template: "httpx -u {url} -title -tech-detect -status-code -silent"
+    description: Probe live hosts, titles, and tech stack.
+  - name: katana
+    binary: katana
+    lane: recon
+    phase: surface
+    template: "katana -u {url} -silent"
+    description: Crawl the target for endpoints and parameters.
   - name: ffuf
     binary: ffuf
-    lane: recon
+    lane: web-scan
     phase: surface
     template: "ffuf -u {url}/FUZZ -w {wordlist} -mc 200,204,301,302,307,401,403"
     description: Content and directory discovery.
+  - name: feroxbuster
+    binary: feroxbuster
+    lane: web-scan
+    phase: surface
+    template: "feroxbuster -u {url} -w {wordlist}"
+    description: Recursive content discovery.
+  - name: gobuster
+    binary: gobuster
+    lane: web-scan
+    phase: surface
+    template: "gobuster dir -u {url} -w {wordlist}"
+    description: Directory and file brute force.
+  - name: arjun
+    binary: arjun
+    lane: web-scan
+    phase: surface
+    template: "arjun -u {url}"
+    description: Discover hidden HTTP parameters.
+  - name: whatweb
+    binary: whatweb
+    lane: web-scan
+    phase: surface
+    template: "whatweb {url}"
+    description: Fingerprint web technologies.
+  - name: wafw00f
+    binary: wafw00f
+    lane: web-scan
+    phase: surface
+    template: "wafw00f {url}"
+    description: Identify the WAF in front of the app.
 
+  # ── scan: broad vulnerability scanners for leads ───────────────────────
   - name: nuclei
     binary: nuclei
     lane: web-scan
     phase: scan
     template: "nuclei -u {url} -silent"
-    description: Template-based vulnerability scan for leads.
+    description: Template-based vulnerability scan.
+  - name: nikto
+    binary: nikto
+    lane: web-scan
+    phase: scan
+    template: "nikto -h {url}"
+    description: Classic web server scanner.
+  - name: wpscan
+    binary: wpscan
+    lane: web-scan
+    phase: scan
+    template: "wpscan --url {url}"
+    description: WordPress vulnerability scan.
 
+  # ── probe: confirm high-value classes ──────────────────────────────────
   - name: sqlmap
     binary: sqlmap
     lane: web-scan
@@ -55,7 +191,13 @@ tools:
     classes: [sqli]
     template: "sqlmap -u {url} --batch"
     description: Confirm and exploit SQL injection.
-
+  - name: ghauri
+    binary: ghauri
+    lane: web-scan
+    phase: probe
+    classes: [sqli]
+    template: "ghauri -u {url} --batch"
+    description: Fast SQL injection detection and exploitation.
   - name: dalfox
     binary: dalfox
     lane: web-scan
@@ -63,10 +205,10 @@ tools:
     classes: [xss]
     template: "dalfox url {url}"
     description: Confirm and exploit cross-site scripting.
-
-  - name: nmap
-    binary: nmap
-    lane: network
-    phase: recon
-    template: "nmap -sV -Pn {host}"
-    description: Port and service scan.
+  - name: commix
+    binary: commix
+    lane: web-scan
+    phase: probe
+    classes: [command_injection]
+    template: "commix -u {url} --batch"
+    description: Confirm and exploit command injection.

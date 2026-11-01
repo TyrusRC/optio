@@ -55,7 +55,10 @@ PARAM_VULN_MAP: dict[str, str] = {
 # Vuln class -> catalog tool name that tests it (when Optio ships one).
 CLASS_TO_TOOL: dict[str, str] = {
     "sqli": "sqlmap",
+    "sql_injection": "sqlmap",
     "xss": "dalfox",
+    "command_injection": "commix",
+    "rce": "commix",
 }
 
 

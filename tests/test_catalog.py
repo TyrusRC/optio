@@ -8,8 +8,10 @@ from optio.catalog import Tool, load_catalog, load_default_catalog
 def test_default_catalog_has_the_starter_tools():
     cat = load_default_catalog()
     names = {t.name for t in cat}
-    assert {"subfinder", "httpx", "katana", "gau", "ffuf",
-            "nuclei", "sqlmap", "dalfox", "nmap"} <= names
+    # core web + network arsenal is present (not an exhaustive list)
+    assert {"subfinder", "httpx", "katana", "gau", "ffuf", "nuclei",
+            "sqlmap", "dalfox", "commix", "nmap", "naabu", "nikto"} <= names
+    assert len(cat) >= 20
 
 
 def test_tool_declares_lane_and_phase():
