@@ -17,6 +17,9 @@ dependencies = [
 [project.scripts]
 optio = "optio.__main__:main"
 
+[dependency-groups]
+dev = ["pytest>=8"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/optio"]
 

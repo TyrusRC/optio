@@ -47,13 +47,16 @@ store keyed by target, so your habits follow you across engagements.
 
 ## Run from source
 
+Optio uses [uv](https://docs.astral.sh/uv/).
+
 ```sh
 git clone https://github.com/TyrusRC/optio
 cd optio
-python -m venv .venv && . .venv/bin/activate
-pip install -e .
-optio
+uv run optio
 ```
+
+`uv run` creates the environment and installs on first use. Run the tests with
+`uv run pytest`.
 
 **Keys:** `a` add a target · `r` run the next suggested action (review the
 command, then confirm) · `f` show the full output of the last run · `q` quit.
