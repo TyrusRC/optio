@@ -31,10 +31,15 @@ None carries all three for *your own* toolset. Optio does.
   pre-fills them. The exact command shows before anything runs.
 - **Low noise.** Every result is summarized to a few lines; the full output is one
   keystroke away.
-- **Your own arsenal.** An editable catalog defines each tool, its flags, and how
-  to read its output. Add your tools; Optio drives them.
+- **Your own arsenal.** An editable catalog of ~70 tools across recon, web scan,
+  network, AD, cloud, code/secrets, and cracking. Add your own; Optio drives them.
+- **Pipelines.** Run a named chain of tools in one keystroke (`recon-sweep`,
+  `web-scan`, `full-web`, `network`, …) — autorun to cut the manual per-tool loop.
 - **Standalone.** Nothing to install but your own tools. Route traffic through a
   proxy you already run (e.g. Burp) if you want — none is required.
+- **Optional hint.** Press `h` and, if a local [Haruspex](https://github.com/TyrusRC/haruspex)
+  is running (`:3000`), it re-ranks the next actions by predicted value — and
+  stays silent when it isn't sure. You still make every call.
 
 ## How it works
 
@@ -59,7 +64,8 @@ uv run optio
 `uv run pytest`.
 
 **Keys:** `a` add a target · `r` run the next suggested action (review the
-command, then confirm) · `f` show the full output of the last run · `q` quit.
+command, then confirm) · `p` run a pipeline · `h` re-rank with Haruspex · `f`
+show the full output of the last run · `q` quit.
 
 State lives in your XDG dirs: config and your catalog in `~/.config/optio/`, the
 SQLite store in `~/.local/share/optio/`. Set `OPTIO_HOME` to point all of it
@@ -69,10 +75,10 @@ somewhere else.
 
 Early but runnable. In place: the target and coverage board, the next-action
 advisor (a deterministic, findings-first priority ladder over the flow), flag
-memory, a subprocess runner with optional proxy, and a catalog of ~34 common web
-and network tools (with `vigil` and `groma` as the default web and network
-scanners). Add your own in `~/.config/optio/catalog/`. The catalog format and the
-UI will still change.
+memory, a subprocess runner with optional proxy, pipelines (autorun chains), an
+optional Haruspex ranking hint, and a catalog of ~70 tools (with `vigil` and
+`groma` as the default web and network scanners). Add your own in
+`~/.config/optio/catalog/`. The catalog format and the UI will still change.
 
 ## Contributing
 

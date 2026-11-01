@@ -23,6 +23,14 @@ def test_tool_declares_lane_and_phase():
     assert "sqli" in sqlmap.classes
 
 
+def test_scope_defaults_to_web_and_is_read_from_yaml():
+    cat = load_default_catalog()
+    # host-targetable web tool
+    assert next(t for t in cat if t.name == "httpx").scope == "web"
+    # cloud tool carries a non-host scope
+    assert next(t for t in cat if t.name == "prowler").scope == "cloud"
+
+
 def test_load_catalog_from_yaml_file(tmp_path):
     p = tmp_path / "extra.yaml"
     p.write_text(textwrap.dedent("""

@@ -86,9 +86,13 @@ def suggest(
                 priority=1, tool=None, command=None, phase="report"))
 
     # 2 — walk the flow phases; fill the first one with an un-run tool.
+    # Only host-targetable tools (web/net) belong in a host's flow; cloud / code /
+    # creds / mobile tools are a different target type (catalog- and
+    # pipeline-runnable, but never auto-suggested here).
+    host_catalog = [t for t in catalog if t.host_targetable()]
     phase_done: dict[str, bool] = {}
     for phase in PHASE_ORDER:
-        phase_tools = [t for t in catalog if t.phase == phase]
+        phase_tools = [t for t in host_catalog if t.phase == phase]
         if not phase_tools:
             continue
         unrun = [t for t in phase_tools if t.name not in tools_run]
@@ -109,8 +113,8 @@ def suggest(
                     command=_render(t, target_values), phase=phase))
             break  # only the earliest open phase
 
-    # 3 / 4 — fully covered.
-    catalog_tools = {t.name for t in catalog}
+    # 3 / 4 — fully covered (host-targetable tools only).
+    catalog_tools = {t.name for t in host_catalog}
     if catalog_tools and catalog_tools <= tools_run and not any(s.phase not in (None, "verify", "report") for s in out):
         if not findings:
             out.append(Suggestion(

@@ -17,6 +17,10 @@ async def _scenario(store):
         # advisor computed a next action, and a fresh target starts at recon
         assert app._suggestions
         assert app._suggestions[0].phase == "recon"
+        # pipelines are loaded and the new bindings exist
+        assert any(p.name == "recon-sweep" for p in app.pipelines)
+        keys = {b[0] for b in app.BINDINGS}
+        assert {"p", "h"} <= keys
 
 
 def test_app_mounts_and_shows_next_action(tmp_path, monkeypatch):

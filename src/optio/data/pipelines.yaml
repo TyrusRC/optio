@@ -1,0 +1,24 @@
+# Optio pipelines — named chains of catalog tools that run in order.
+# Trigger one and Optio walks the steps, recording each run, instead of the
+# manual pick-confirm-run loop per tool. A step whose command still has an
+# unfilled placeholder is skipped (not run broken). Add your own below.
+pipelines:
+  - name: recon-sweep
+    description: Subdomains, live hosts, crawl, archived URLs.
+    steps: [subfinder, httpx, katana, gau]
+
+  - name: web-scan
+    description: Live check then the default web DAST and templates.
+    steps: [httpx, vigil, nuclei]
+
+  - name: full-web
+    description: Recon, surface, then scan — the standard web pass.
+    steps: [subfinder, httpx, katana, gau, vigil, nuclei]
+
+  - name: network
+    description: Port + service discovery on the host.
+    steps: [groma, nmap]
+
+  - name: quick-probe
+    description: Fast injection probes against a single URL.
+    steps: [vigil, sqlmap, dalfox]

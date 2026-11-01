@@ -15,12 +15,13 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, ListItem, ListView, Label, Static
 
-from optio import paths
+from optio import haruspex, paths
 from optio.advisor import Suggestion, suggest
 from optio.catalog import Tool, load_catalog, load_default_catalog
 from optio.context import target_values
 from optio.executor import run as run_tool
 from optio.flow import phase_rank
+from optio.pipeline import build_command, load_default_pipelines, load_pipelines
 from optio.store import Store
 from optio.summarize import summarize
 from optio.tui.modals import PromptModal
@@ -41,6 +42,8 @@ class OptioApp(App):
     BINDINGS = [
         ("a", "add_target", "Add target"),
         ("r", "run_suggested", "Run next action"),
+        ("p", "run_pipeline", "Run pipeline"),
+        ("h", "haruspex_hint", "Haruspex rank"),
         ("f", "full_output", "Full output"),
         ("q", "quit", "Quit"),
     ]
@@ -56,9 +59,13 @@ class OptioApp(App):
         for t in self.catalog:
             seen[t.name] = t
         self.catalog = list(seen.values())
+        self.pipelines = load_default_pipelines() + load_pipelines(
+            sorted(paths.user_catalog_dir().glob("*pipeline*.yaml")) if paths.user_catalog_dir().exists() else []
+        )
         self._targets: list[str] = []
         self._suggestions: list[Suggestion] = []
         self._last_output: str = ""
+        self._log_lines: list[str] = []
 
     # ── layout ────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -182,8 +189,80 @@ class OptioApp(App):
         self.store.record_run(name, tool.name, command, result.exit_code, summary)
         self.store.save_flags(name, tool.name, command)
         self._last_output = result.output
-        self.query_one("#log", Static).update(summary)
+        self._log(summary)
         self.refresh_detail()
+
+    def _log(self, line: str) -> None:
+        self._log_lines.append(line)
+        self.query_one("#log", Static).update("\n".join(self._log_lines[-6:]))
+
+    @work
+    async def action_run_pipeline(self) -> None:
+        name = self._current_target()
+        if not name:
+            self.notify("Add and select a target first.", severity="warning")
+            return
+        names = ", ".join(p.name for p in self.pipelines)
+        choice = await self.push_screen_wait(PromptModal(
+            "Run pipeline", initial=self.pipelines[0].name if self.pipelines else "",
+            confirm_label="Run", note=f"available: {names}"))
+        if not choice:
+            return
+        pipe = next((p for p in self.pipelines if p.name == choice.strip()), None)
+        if not pipe:
+            self.notify(f"No pipeline named {choice!r}.", severity="warning")
+            return
+        tvals = target_values(name)
+        proxy = (self.store.get_target(name) or {}).get("proxy") or None
+        by_name = {t.name: t for t in self.catalog}
+        self._log(f"▶ pipeline {pipe.name} ({len(pipe.steps)} steps)")
+        for step in pipe.steps:
+            tool = by_name.get(step)
+            if tool is None:
+                self._log(f"{step} · skipped · not in catalog")
+                continue
+            command, reason = build_command(tool, tvals, lambda n: self.store.get_flags(name, n))
+            if command is None:
+                self._log(f"{step} · skipped · {reason}")
+                continue
+            self.notify(f"{pipe.name}: running {step}…")
+            result = await asyncio.to_thread(run_tool, command, proxy)
+            summary = summarize(step, result.exit_code, result.output)
+            self.store.record_run(name, step, command, result.exit_code, summary)
+            self.store.save_flags(name, step, command)
+            self._last_output = result.output
+            self._log(summary)
+            if pipe.stop_on_error and result.exit_code != 0:
+                self._log(f"■ stopped on error at {step}")
+                break
+        self._log(f"✓ pipeline {pipe.name} done")
+        self.refresh_detail()
+
+    @work
+    async def action_haruspex_hint(self) -> None:
+        if not self._suggestions:
+            self.notify("No suggestions to rank.")
+            return
+        name = self._current_target() or ""
+        target = self.store.get_target(name) or {}
+        options = [s.tool for s in self._suggestions if s.tool]
+        if not options:
+            self.notify("Top action is manual — nothing to rank.")
+            return
+        ranked = await asyncio.to_thread(
+            haruspex.rank_candidates,
+            "Which tool should the operator run next on this target?",
+            options, name, ",".join(target.get("tech") or []))
+        if not ranked:
+            self.notify("Haruspex: no call (abstained or offline).")
+            return
+        order = {tool: i for i, tool in enumerate(ranked)}
+        self._suggestions = sorted(
+            self._suggestions,
+            key=lambda s: order.get(s.tool, len(order)) if s.tool else len(order) + 1)
+        self.query_one("#nextaction", Static).update(
+            self._format_suggestions(self.store.findings_for_target(name)) + "\n[dim](ordered by Haruspex)[/dim]")
+        self.notify("Haruspex re-ranked the next actions.")
 
     def action_full_output(self) -> None:
         if self._last_output:

@@ -27,6 +27,16 @@ class Tool:
     template: str
     classes: list[str] = field(default_factory=list)
     description: str = ""
+    # scope decides whether the host-flow advisor auto-suggests this tool.
+    # "web"/"net" = host/URL-targetable (suggested in the flow). "cloud"/"code"/
+    # "creds"/"mobile" = a different target type: catalog- and pipeline-runnable,
+    # but not auto-suggested against a host.
+    scope: str = "web"
+
+    HOST_SCOPES = ("web", "net")
+
+    def host_targetable(self) -> bool:
+        return self.scope in self.HOST_SCOPES
 
     def placeholders(self) -> list[str]:
         """The ``{name}`` fields the template expects."""
@@ -63,6 +73,7 @@ def _tools_from_doc(doc: dict) -> list[Tool]:
             template=raw["template"],
             classes=list(raw.get("classes", [])),
             description=raw.get("description", ""),
+            scope=raw.get("scope", "web"),
         ))
     return out
 

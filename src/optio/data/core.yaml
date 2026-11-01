@@ -1,226 +1,101 @@
 # Optio starter catalog — the external CLI tools Optio can run for you.
-# Each entry: name, binary, lane, phase, template, optional classes, description.
-# Placeholders are filled by the launcher from the target:
-#   {domain}   bare host          example.com
-#   {url}      full URL           https://example.com
-#   {host}     host[:port]        example.com
-#   {wordlist} path to a wordlist
-# This is a starting point, not a limit — drop your own YAML in ~/.config/optio/catalog/.
+# Fields: name, binary, lane, phase, scope, template, optional classes, description.
+# Placeholders filled by the launcher from the target (unknown ones stay literal
+# for you to fill): {domain} {url} {host} {wordlist} {path} {image} {hashes} {interface}
+# scope: web/net are host-targetable (the advisor suggests them in the flow);
+#        cloud/code/creds/mobile/llm are catalog- and pipeline-runnable only.
+# Add your own YAML in ~/.config/optio/catalog/.
 tools:
-  # ── recon: map the attack surface ──────────────────────────────────────
-  - name: subfinder
-    binary: subfinder
-    lane: recon
-    phase: recon
-    template: "subfinder -d {domain} -silent"
-    description: Passive subdomain enumeration.
-  - name: amass
-    binary: amass
-    lane: recon
-    phase: recon
-    template: "amass enum -d {domain}"
-    description: Deep subdomain enumeration (active + passive).
-  - name: assetfinder
-    binary: assetfinder
-    lane: recon
-    phase: recon
-    template: "assetfinder --subs-only {domain}"
-    description: Find subdomains from public sources.
-  - name: dnsx
-    binary: dnsx
-    lane: recon
-    phase: recon
-    template: "dnsx -d {domain} -silent"
-    description: Resolve and probe DNS records.
-  - name: asnmap
-    binary: asnmap
-    lane: recon
-    phase: recon
-    template: "asnmap -d {domain} -silent"
-    description: Map the target's ASN and IP ranges.
-  - name: chaos
-    binary: chaos
-    lane: recon
-    phase: recon
-    template: "chaos -d {domain} -silent"
-    description: Subdomains from the ProjectDiscovery Chaos dataset.
-  - name: theharvester
-    binary: theHarvester
-    lane: recon
-    phase: recon
-    template: "theHarvester -d {domain} -b all"
-    description: OSINT — emails, hosts, and names.
-  - name: tlsx
-    binary: tlsx
-    lane: recon
-    phase: recon
-    template: "tlsx -u {host} -silent"
-    description: TLS certificate and SAN enumeration.
-  - name: cdncheck
-    binary: cdncheck
-    lane: recon
-    phase: recon
-    template: "cdncheck -i {domain}"
-    description: Detect CDN / WAF / cloud in front of the host.
-  - name: gau
-    binary: gau
-    lane: recon
-    phase: surface
-    template: "gau {domain}"
-    description: Pull known URLs from public archives.
-  - name: waybackurls
-    binary: waybackurls
-    lane: recon
-    phase: surface
-    template: "waybackurls {domain}"
-    description: URLs from the Wayback Machine.
+  # ── recon ───────────────────────────────────────────────────────────────
+  - {name: subfinder, binary: subfinder, lane: recon, phase: recon, scope: web, template: "subfinder -d {domain} -silent", description: Passive subdomain enumeration.}
+  - {name: amass, binary: amass, lane: recon, phase: recon, scope: web, template: "amass enum -d {domain}", description: Deep subdomain enumeration.}
+  - {name: assetfinder, binary: assetfinder, lane: recon, phase: recon, scope: web, template: "assetfinder --subs-only {domain}", description: Subdomains from public sources.}
+  - {name: dnsx, binary: dnsx, lane: recon, phase: recon, scope: web, template: "dnsx -d {domain} -silent", description: Resolve and probe DNS.}
+  - {name: asnmap, binary: asnmap, lane: recon, phase: recon, scope: web, template: "asnmap -d {domain} -silent", description: Map ASN and IP ranges.}
+  - {name: chaos, binary: chaos, lane: recon, phase: recon, scope: web, template: "chaos -d {domain} -silent", description: Subdomains from the Chaos dataset.}
+  - {name: alterx, binary: alterx, lane: recon, phase: recon, scope: web, template: "alterx -l {wordlist} -silent", description: Permutation-based subdomain generation.}
+  - {name: shuffledns, binary: shuffledns, lane: recon, phase: recon, scope: web, template: "shuffledns -d {domain} -r {wordlist} -silent", description: Mass DNS resolve + bruteforce.}
+  - {name: dnsgen, binary: dnsgen, lane: recon, phase: recon, scope: web, template: "dnsgen {wordlist}", description: Generate DNS permutations from a list.}
+  - {name: tlsx, binary: tlsx, lane: recon, phase: recon, scope: web, template: "tlsx -u {host} -silent", description: TLS certificate / SAN enumeration.}
+  - {name: cdncheck, binary: cdncheck, lane: recon, phase: recon, scope: web, template: "cdncheck -i {domain}", description: Detect CDN / WAF / cloud in front.}
+  - {name: uncover, binary: uncover, lane: recon, phase: recon, scope: web, template: "uncover -q {domain} -silent", description: Hosts from Shodan/Censys/Fofa.}
+  - {name: theharvester, binary: theHarvester, lane: recon, phase: recon, scope: web, template: "theHarvester -d {domain} -b all", description: OSINT — emails, hosts, names.}
+  - {name: gau, binary: gau, lane: recon, phase: surface, scope: web, template: "gau {domain}", description: Known URLs from public archives.}
+  - {name: waybackurls, binary: waybackurls, lane: recon, phase: surface, scope: web, template: "waybackurls {domain}", description: URLs from the Wayback Machine.}
 
-  # ── network: ports and services on the host ────────────────────────────
-  - name: groma
-    binary: groma
-    lane: network
-    phase: recon
-    template: "groma scan {host}"
-    description: Full-range port scan + service CVE checks (naabu-backed). First network scan.
-  - name: nmap
-    binary: nmap
-    lane: network
-    phase: recon
-    template: "nmap -sV -Pn {host}"
-    description: Port and service/version scan.
-  - name: naabu
-    binary: naabu
-    lane: network
-    phase: recon
-    template: "naabu -host {host} -silent"
-    description: Fast port discovery.
-  - name: masscan
-    binary: masscan
-    lane: network
-    phase: recon
-    template: "masscan -p1-1000 {host} --rate 1000"
-    description: Mass port sweep.
+  # ── network: ports and services ──────────────────────────────────────────
+  - {name: groma, binary: groma, lane: network, phase: recon, scope: net, template: "groma scan {host}", description: Full-range port scan + service CVE checks. First network scan.}
+  - {name: naabu, binary: naabu, lane: network, phase: recon, scope: net, template: "naabu -host {host} -silent", description: Fast port discovery.}
+  - {name: nmap, binary: nmap, lane: network, phase: recon, scope: net, template: "nmap -sV -Pn {host}", description: Port and service/version scan.}
+  - {name: masscan, binary: masscan, lane: network, phase: recon, scope: net, template: "masscan -p1-1000 {host} --rate 1000", description: Mass port sweep.}
 
-  # ── surface: endpoints, params, content ────────────────────────────────
-  - name: httpx
-    binary: httpx
-    lane: recon
-    phase: surface
-    template: "httpx -u {url} -title -tech-detect -status-code -silent"
-    description: Probe live hosts, titles, and tech stack.
-  - name: katana
-    binary: katana
-    lane: recon
-    phase: surface
-    template: "katana -u {url} -silent"
-    description: Crawl the target for endpoints and parameters.
-  - name: ffuf
-    binary: ffuf
-    lane: web-scan
-    phase: surface
-    template: "ffuf -u {url}/FUZZ -w {wordlist} -mc 200,204,301,302,307,401,403"
-    description: Content and directory discovery.
-  - name: feroxbuster
-    binary: feroxbuster
-    lane: web-scan
-    phase: surface
-    template: "feroxbuster -u {url} -w {wordlist}"
-    description: Recursive content discovery.
-  - name: gobuster
-    binary: gobuster
-    lane: web-scan
-    phase: surface
-    template: "gobuster dir -u {url} -w {wordlist}"
-    description: Directory and file brute force.
-  - name: arjun
-    binary: arjun
-    lane: web-scan
-    phase: surface
-    template: "arjun -u {url}"
-    description: Discover hidden HTTP parameters.
-  - name: whatweb
-    binary: whatweb
-    lane: web-scan
-    phase: surface
-    template: "whatweb {url}"
-    description: Fingerprint web technologies.
-  - name: wafw00f
-    binary: wafw00f
-    lane: web-scan
-    phase: surface
-    template: "wafw00f {url}"
-    description: Identify the WAF in front of the app.
+  # ── surface: endpoints, params, content ──────────────────────────────────
+  - {name: httpx, binary: httpx, lane: recon, phase: surface, scope: web, template: "httpx -u {url} -title -tech-detect -status-code -silent", description: Probe live hosts, titles, tech.}
+  - {name: katana, binary: katana, lane: recon, phase: surface, scope: web, template: "katana -u {url} -silent", description: Crawl endpoints and parameters.}
+  - {name: ffuf, binary: ffuf, lane: web-scan, phase: surface, scope: web, template: "ffuf -u {url}/FUZZ -w {wordlist} -mc 200,204,301,302,307,401,403", description: Content and directory discovery.}
+  - {name: feroxbuster, binary: feroxbuster, lane: web-scan, phase: surface, scope: web, template: "feroxbuster -u {url} -w {wordlist}", description: Recursive content discovery.}
+  - {name: gobuster, binary: gobuster, lane: web-scan, phase: surface, scope: web, template: "gobuster dir -u {url} -w {wordlist}", description: Directory and file brute force.}
+  - {name: arjun, binary: arjun, lane: web-scan, phase: surface, scope: web, template: "arjun -u {url}", description: Discover hidden HTTP parameters.}
+  - {name: gowitness, binary: gowitness, lane: web-scan, phase: surface, scope: web, template: "gowitness scan single -u {url}", description: Screenshot the page.}
+  - {name: whatweb, binary: whatweb, lane: web-scan, phase: surface, scope: web, template: "whatweb {url}", description: Fingerprint web technologies.}
+  - {name: wafw00f, binary: wafw00f, lane: web-scan, phase: surface, scope: web, template: "wafw00f {url}", description: Identify the WAF.}
+  - {name: graphw00f, binary: graphw00f, lane: web-scan, phase: surface, scope: web, template: "graphw00f -d -t {url}", description: Fingerprint the GraphQL engine.}
 
-  # ── scan: broad vulnerability scanners for leads ───────────────────────
-  - name: vigil
-    binary: vigil
-    lane: web-scan
-    phase: scan
-    template: "vigil scan {url}"
-    description: Context-aware web DAST mapped to OWASP WSTG / Top 10 / API / ASVS. First web scan.
-  - name: nuclei
-    binary: nuclei
-    lane: web-scan
-    phase: scan
-    template: "nuclei -u {url} -silent"
-    description: Template-based vulnerability scan.
-  - name: nikto
-    binary: nikto
-    lane: web-scan
-    phase: scan
-    template: "nikto -h {url}"
-    description: Classic web server scanner.
-  - name: wpscan
-    binary: wpscan
-    lane: web-scan
-    phase: scan
-    template: "wpscan --url {url}"
-    description: WordPress vulnerability scan.
-  - name: netexec
-    binary: netexec
-    lane: network
-    phase: scan
-    template: "netexec smb {host}"
-    description: SMB/AD enumeration and auth checks.
-  - name: enum4linux-ng
-    binary: enum4linux-ng
-    lane: network
-    phase: scan
-    template: "enum4linux-ng {host}"
-    description: SMB / NetBIOS enumeration.
-  - name: smbmap
-    binary: smbmap
-    lane: network
-    phase: scan
-    template: "smbmap -H {host}"
-    description: Enumerate SMB shares and permissions.
+  # ── scan: broad vulnerability scanners ───────────────────────────────────
+  - {name: vigil, binary: vigil, lane: web-scan, phase: scan, scope: web, template: "vigil scan {url}", description: Context-aware web DAST (OWASP WSTG/Top 10/API/ASVS). First web scan.}
+  - {name: nuclei, binary: nuclei, lane: web-scan, phase: scan, scope: web, template: "nuclei -u {url} -silent", description: Template-based vulnerability scan.}
+  - {name: nikto, binary: nikto, lane: web-scan, phase: scan, scope: web, template: "nikto -h {url}", description: Classic web server scanner.}
+  - {name: wpscan, binary: wpscan, lane: web-scan, phase: scan, scope: web, template: "wpscan --url {url}", description: WordPress vulnerability scan.}
+  - {name: droopescan, binary: droopescan, lane: web-scan, phase: scan, scope: web, template: "droopescan scan drupal -u {url}", description: Drupal/CMS scanner.}
+  - {name: byp4xx, binary: byp4xx, lane: web-scan, phase: scan, scope: web, template: "byp4xx {url}", description: 40x access-control bypass attempts.}
+  - {name: vulnx, binary: vulnx, lane: web-scan, phase: scan, scope: web, template: "vulnx {url}", description: CVE intelligence for the detected stack.}
 
-  # ── probe: confirm high-value classes ──────────────────────────────────
-  - name: sqlmap
-    binary: sqlmap
-    lane: web-scan
-    phase: probe
-    classes: [sqli]
-    template: "sqlmap -u {url} --batch"
-    description: Confirm and exploit SQL injection.
-  - name: ghauri
-    binary: ghauri
-    lane: web-scan
-    phase: probe
-    classes: [sqli]
-    template: "ghauri -u {url} --batch"
-    description: Fast SQL injection detection and exploitation.
-  - name: dalfox
-    binary: dalfox
-    lane: web-scan
-    phase: probe
-    classes: [xss]
-    template: "dalfox url {url}"
-    description: Confirm and exploit cross-site scripting.
-  - name: commix
-    binary: commix
-    lane: web-scan
-    phase: probe
-    classes: [command_injection]
-    template: "commix -u {url} --batch"
-    description: Confirm and exploit command injection.
+  # ── probe: confirm high-value classes ────────────────────────────────────
+  - {name: sqlmap, binary: sqlmap, lane: web-scan, phase: probe, scope: web, classes: [sqli], template: "sqlmap -u {url} --batch", description: Confirm/exploit SQL injection.}
+  - {name: ghauri, binary: ghauri, lane: web-scan, phase: probe, scope: web, classes: [sqli], template: "ghauri -u {url} --batch", description: Fast SQLi detection/exploitation.}
+  - {name: dalfox, binary: dalfox, lane: web-scan, phase: probe, scope: web, classes: [xss], template: "dalfox url {url}", description: Confirm/exploit XSS.}
+  - {name: commix, binary: commix, lane: web-scan, phase: probe, scope: web, classes: [command_injection], template: "commix -u {url} --batch", description: Confirm/exploit command injection.}
+
+  # ── Active Directory / post-exploitation (host-targetable) ────────────────
+  - {name: netexec, binary: netexec, lane: ad, phase: scan, scope: net, template: "netexec smb {host}", description: SMB/AD enumeration and auth checks.}
+  - {name: enum4linux-ng, binary: enum4linux-ng, lane: ad, phase: scan, scope: net, template: "enum4linux-ng {host}", description: SMB / NetBIOS enumeration.}
+  - {name: smbmap, binary: smbmap, lane: ad, phase: scan, scope: net, template: "smbmap -H {host}", description: Enumerate SMB shares/permissions.}
+  - {name: kerbrute, binary: kerbrute, lane: ad, phase: scan, scope: net, template: "kerbrute userenum -d {domain} --dc {host} {wordlist}", description: Kerberos user enumeration.}
+  - {name: certipy, binary: certipy, lane: ad, phase: scan, scope: net, template: "certipy find -dc-ip {host}", description: AD CS misconfiguration discovery.}
+  - {name: ldapdomaindump, binary: ldapdomaindump, lane: ad, phase: scan, scope: net, template: "ldapdomaindump {host}", description: Dump AD info over LDAP.}
+  - {name: bloodhound-python, binary: bloodhound-python, lane: ad, phase: scan, scope: net, template: "bloodhound-python -d {domain} -c all -ns {host}", description: Collect BloodHound graph data.}
+  - {name: impacket-secretsdump, binary: impacket-secretsdump, lane: ad, phase: probe, scope: net, template: "impacket-secretsdump {domain}/user@{host}", description: Dump secrets over SMB/remote.}
+  - {name: responder, binary: responder, lane: ad, phase: scan, scope: net, template: "responder -I {interface}", description: LLMNR/NBT-NS/mDNS poisoner.}
+  - {name: sshuttle, binary: sshuttle, lane: ad, phase: probe, scope: net, template: "sshuttle -r user@{host} 0.0.0.0/0", description: Transparent pivot over SSH.}
+
+  # ── cloud / container / k8s (account- or image-scoped) ───────────────────
+  - {name: prowler, binary: prowler, lane: cloud, phase: scan, scope: cloud, template: "prowler aws", description: AWS/Azure/GCP posture scan.}
+  - {name: scoutsuite, binary: scout, lane: cloud, phase: scan, scope: cloud, template: "scout aws", description: Multi-cloud security auditing.}
+  - {name: checkov, binary: checkov, lane: cloud, phase: scan, scope: code, template: "checkov -d {path}", description: IaC misconfiguration scan.}
+  - {name: tfsec, binary: tfsec, lane: cloud, phase: scan, scope: code, template: "tfsec {path}", description: Terraform static analysis.}
+  - {name: trivy, binary: trivy, lane: cloud, phase: scan, scope: code, template: "trivy fs {path}", description: Vulnerability + misconfig scan (fs/image).}
+  - {name: kube-hunter, binary: kube-hunter, lane: cloud, phase: scan, scope: net, template: "kube-hunter --remote {host}", description: Kubernetes attack-surface hunt.}
+  - {name: kubescape, binary: kubescape, lane: cloud, phase: scan, scope: cloud, template: "kubescape scan", description: Kubernetes posture scan.}
+  - {name: kdigger, binary: kdigger, lane: cloud, phase: scan, scope: cloud, template: "kdigger dig all", description: In-cluster context discovery.}
+  - {name: pacu, binary: pacu, lane: cloud, phase: probe, scope: cloud, template: "pacu", description: AWS exploitation framework.}
+  - {name: cosign, binary: cosign, lane: cloud, phase: scan, scope: code, template: "cosign verify {image}", description: Verify container image signatures.}
+
+  # ── code / secrets / SAST / SCA (path- or repo-scoped) ───────────────────
+  - {name: trufflehog, binary: trufflehog, lane: secrets, phase: scan, scope: code, template: "trufflehog filesystem {path}", description: Find verified secrets.}
+  - {name: gitleaks, binary: gitleaks, lane: secrets, phase: scan, scope: code, template: "gitleaks detect -s {path}", description: Detect secrets in git history.}
+  - {name: semgrep, binary: semgrep, lane: sast, phase: scan, scope: code, template: "semgrep --config auto {path}", description: Static analysis (SAST).}
+  - {name: osv-scanner, binary: osv-scanner, lane: sca, phase: scan, scope: code, template: "osv-scanner -r {path}", description: Dependency vulnerability scan.}
+  - {name: grype, binary: grype, lane: sca, phase: scan, scope: code, template: "grype {path}", description: SCA for packages / images.}
+  - {name: syft, binary: syft, lane: sca, phase: recon, scope: code, template: "syft {path}", description: Generate an SBOM.}
+  - {name: hadolint, binary: hadolint, lane: sast, phase: scan, scope: code, template: "hadolint {path}", description: Dockerfile linter.}
+  - {name: poutine, binary: poutine, lane: sast, phase: scan, scope: code, template: "poutine {path}", description: CI/CD pipeline security scan.}
+  - {name: git-dumper, binary: git-dumper, lane: secrets, phase: surface, scope: code, template: "git-dumper {url}/.git {path}", description: Dump an exposed .git directory.}
+
+  # ── credentials / cracking ───────────────────────────────────────────────
+  - {name: john, binary: john, lane: creds, phase: probe, scope: creds, template: "john {hashes}", description: Password hash cracking.}
+  - {name: hashcat, binary: hashcat, lane: creds, phase: probe, scope: creds, template: "hashcat {hashes} {wordlist}", description: GPU password cracking.}
+
+  # ── LLM / mobile ─────────────────────────────────────────────────────────
+  - {name: garak, binary: garak, lane: llm, phase: scan, scope: llm, template: "garak --model_type rest", description: LLM vulnerability scanner.}
+  - {name: frida, binary: frida-ps, lane: mobile, phase: recon, scope: mobile, template: "frida-ps -U", description: List processes on the device.}
+  - {name: go-ios, binary: ios, lane: mobile, phase: recon, scope: mobile, template: "ios list", description: iOS device control.}

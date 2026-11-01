@@ -49,9 +49,20 @@ def test_probe_phase_orders_classes_by_tech():
 
 
 def test_full_coverage_no_findings_suggests_change_of_approach():
-    all_tools = {t.name for t in CAT}
-    out = suggest(CAT, tech=["default"], tools_run=all_tools, findings=[])
+    host_tools = {t.name for t in CAT if t.host_targetable()}
+    out = suggest(CAT, tech=["default"], tools_run=host_tools, findings=[])
     assert any(s.tool is None and "approach" in s.action.lower() for s in out)
+
+
+def test_non_host_tools_are_never_auto_suggested():
+    # a fresh target walks recon; cloud/code/creds tools must not appear
+    non_host = {t.name for t in CAT if not t.host_targetable()}
+    assert "prowler" in non_host and "trufflehog" in non_host
+    # run every host tool so the flow is exhausted; still no non-host suggestion
+    host_tools = {t.name for t in CAT if t.host_targetable()}
+    for run in (set(), host_tools):
+        out = suggest(CAT, tech=["php"], tools_run=run, findings=[])
+        assert all(s.tool is None or s.tool not in non_host for s in out)
 
 
 def test_command_rendered_when_target_values_present():
