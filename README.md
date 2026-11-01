@@ -45,10 +45,29 @@ streams its output; a **summarizer** turns that output into a few lines. Your
 targets, the coverage ledger, your flag memory, and your findings live in a local
 store keyed by target, so your habits follow you across engagements.
 
+## Run from source
+
+```sh
+git clone https://github.com/TyrusRC/optio
+cd optio
+python -m venv .venv && . .venv/bin/activate
+pip install -e .
+optio
+```
+
+**Keys:** `a` add a target · `r` run the next suggested action (review the
+command, then confirm) · `f` show the full output of the last run · `q` quit.
+
+State lives in your XDG dirs: config and your catalog in `~/.config/optio/`, the
+SQLite store in `~/.local/share/optio/`. Set `OPTIO_HOME` to point all of it
+somewhere else.
+
 ## Status
 
-Early development. The tool is being built in the open; the interface and catalog
-format may change. Not yet packaged for install — watch the repo.
+Early but runnable. In place: the target and coverage board, the next-action
+advisor (a deterministic, findings-first priority ladder over the flow), flag
+memory, a subprocess runner with optional proxy, and a starter catalog of nine
+tools. The catalog format and the UI will still change.
 
 ## Contributing
 

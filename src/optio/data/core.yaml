@@ -1,0 +1,72 @@
+# Optio starter catalog — one tool per job across the flow.
+# Each entry: name, binary, lane, phase, template, optional classes, description.
+# Placeholders in the template are filled by the launcher from the target:
+#   {domain}  bare host         e.g. example.com
+#   {url}     full URL          e.g. https://example.com
+#   {host}    host[:port]       e.g. example.com
+#   {wordlist} path to a wordlist
+tools:
+  - name: subfinder
+    binary: subfinder
+    lane: recon
+    phase: recon
+    template: "subfinder -d {domain} -silent"
+    description: Passive subdomain enumeration.
+
+  - name: httpx
+    binary: httpx
+    lane: recon
+    phase: recon
+    template: "httpx -u {url} -title -tech-detect -status-code -silent"
+    description: Probe live hosts, titles, and tech stack.
+
+  - name: katana
+    binary: katana
+    lane: recon
+    phase: surface
+    template: "katana -u {url} -silent"
+    description: Crawl the target for endpoints and parameters.
+
+  - name: gau
+    binary: gau
+    lane: recon
+    phase: surface
+    template: "gau {domain}"
+    description: Pull known URLs from public archives.
+
+  - name: ffuf
+    binary: ffuf
+    lane: recon
+    phase: surface
+    template: "ffuf -u {url}/FUZZ -w {wordlist} -mc 200,204,301,302,307,401,403"
+    description: Content and directory discovery.
+
+  - name: nuclei
+    binary: nuclei
+    lane: web-scan
+    phase: scan
+    template: "nuclei -u {url} -silent"
+    description: Template-based vulnerability scan for leads.
+
+  - name: sqlmap
+    binary: sqlmap
+    lane: web-scan
+    phase: probe
+    classes: [sqli]
+    template: "sqlmap -u {url} --batch"
+    description: Confirm and exploit SQL injection.
+
+  - name: dalfox
+    binary: dalfox
+    lane: web-scan
+    phase: probe
+    classes: [xss]
+    template: "dalfox url {url}"
+    description: Confirm and exploit cross-site scripting.
+
+  - name: nmap
+    binary: nmap
+    lane: network
+    phase: recon
+    template: "nmap -sV -Pn {host}"
+    description: Port and service scan.
