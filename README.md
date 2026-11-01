@@ -1,13 +1,16 @@
 # Optio
 
-A standalone terminal cockpit for a pentest operator. It runs your security
-tools, remembers the flags, tracks what already ran against each target, and
-keeps the screen quiet.
+**A terminal cockpit for pentesters. Run your tools, remember the flags, track
+every target — without the noise.**
 
-**You** make every decision. Optio has no LLM and depends on no other engine —
-one operator, one terminal, your own tools.
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-## The problem
+Optio runs your security tools, recalls the flags you used last time, tracks what
+already ran against each target, and parses every result down to a few lines. You
+make every decision. It has no LLM, and it depends on nothing but the tools you
+already have installed.
+
+## Why
 
 Mid-engagement you carry three things in your head at once:
 
@@ -15,40 +18,42 @@ Mid-engagement you carry three things in your head at once:
 2. **What already ran** against this target, and the result.
 3. **What is still open** — the untested tools and classes.
 
-Cheatsheet tools (arsenal, navi) remember the flags. A couple of TUI consoles
-track one target. None carries all three for *your own* toolset. Optio does.
+Cheatsheet tools remember the flags. A couple of TUI consoles track one target.
+None carries all three for *your own* toolset. Optio does.
 
-## What it does
+## Features
 
-- **You decide; Optio remembers.** No generative model. It surfaces state and
-  runs what you pick.
+- **You decide; Optio remembers.** No model, no automation firing on its own — it
+  surfaces state and runs what you pick.
 - **One target, tracked.** A quiet board shows coverage gaps, which tools ran vs.
-  open, and findings — not a scrolling log.
-- **Flag memory.** Pick a tool, it recalls your last arguments for this target
-  and pre-fills them. The exact command shows before anything runs.
-- **Low noise.** Every tool result is summarized to a few lines; the full output
-  is one keystroke away.
-- **Standalone.** Nothing to install but your own tools. It can route tool
-  traffic through a proxy you already run (e.g. Burp), but requires none.
-- **Optional hint.** It can show a ranking hint from
-  [Haruspex](https://github.com/TyrusRC/haruspex) — a small, local, calibrated
-  scorer that abstains when unsure — but you make every call.
+  open, and your findings — not a scrolling log.
+- **Flag memory.** Pick a tool, it recalls your last arguments for this target and
+  pre-fills them. The exact command shows before anything runs.
+- **Low noise.** Every result is summarized to a few lines; the full output is one
+  keystroke away.
+- **Your own arsenal.** An editable catalog defines each tool, its flags, and how
+  to read its output. Add your tools; Optio drives them.
+- **Standalone.** Nothing to install but your own tools. Route traffic through a
+  proxy you already run (e.g. Burp) if you want — none is required.
 
 ## How it works
 
-Optio is one process with four parts over its own local store: a **catalog** of
-tool definitions (binary + flag template + summarizer), a **launcher** that
-recalls your flags and shows the command before it runs, an **executor** that
-spawns the tool as a subprocess, and a **summarizer** that turns the output into
-a few lines. The store holds your targets, the coverage ledger, your flag
-memory, and your findings.
-
-See [DESIGN.md](DESIGN.md) for the full design.
+Optio is a single terminal app over a local store. A **catalog** defines your
+tools (binary, flag template, output summarizer); a **launcher** recalls your
+flags and shows the command before it runs; an **executor** spawns the tool and
+streams its output; a **summarizer** turns that output into a few lines. Your
+targets, the coverage ledger, your flag memory, and your findings live in a local
+store keyed by target, so your habits follow you across engagements.
 
 ## Status
 
-Design stage. No product code yet. The design is agreed first, then a plan, then
-code.
+Early development. The tool is being built in the open; the interface and catalog
+format may change. Not yet packaged for install — watch the repo.
+
+## Contributing
+
+Issues and pull requests are welcome. The catalog is designed to be extended, so
+new tool definitions and output summarizers are a good first contribution.
 
 ## License
 
