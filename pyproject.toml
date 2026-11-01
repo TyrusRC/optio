@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 optio = "optio.__main__:main"
+optio-api = "optio.api:serve"
 
 [dependency-groups]
 dev = ["pytest>=8"]

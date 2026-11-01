@@ -71,6 +71,29 @@ State lives in your XDG dirs: config and your catalog in `~/.config/optio/`, the
 SQLite store in `~/.local/share/optio/`. Set `OPTIO_HOME` to point all of it
 somewhere else.
 
+## Automation API
+
+For scripts and CI, Optio also exposes a small HTTP API over the same store,
+catalog, and advisor — no TUI, no extra dependencies (stdlib `http.server`).
+
+```sh
+uv run optio-api            # http://127.0.0.1:8787
+```
+
+JSON in, JSON out:
+
+```sh
+curl -s localhost:8787/targets -d '{"name":"ex.com","tech":["php"]}'
+curl -s localhost:8787/targets/ex.com/next          # ranked next actions
+curl -s localhost:8787/targets/ex.com/run -d '{"tool":"subfinder"}'
+curl -s localhost:8787/targets/ex.com/run-pipeline -d '{"pipeline":"recon-sweep"}'
+curl -s localhost:8787/targets/ex.com/coverage      # ran vs open
+curl -s localhost:8787/targets/ex.com/findings
+```
+
+The API binds to loopback by default — it runs tools and reads findings, so it
+stays local unless you pass `--host` to open it.
+
 ## Status
 
 Early but runnable. In place: the target and coverage board, the next-action
