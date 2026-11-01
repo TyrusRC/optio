@@ -7,11 +7,6 @@ keeps the screen quiet.
 **You** make every decision. Optio has no LLM and depends on no other engine —
 one operator, one terminal, your own tools.
 
-> In a Roman century, the *optio* was the centurion's deputy — the one who kept
-> the roster, remembered the standing orders, and handled the bookkeeping so the
-> commander could decide. That is this tool's job. (It also puns on CLI
-> **opt**ions.)
-
 ## The problem
 
 Mid-engagement you carry three things in your head at once:
