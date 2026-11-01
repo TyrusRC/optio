@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optio — attack surface</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="bar">
+  <span class="brand">optio</span>
+  <select id="target-select" title="target"></select>
+  <button id="add-target">+ target</button>
+  <button id="btn-auto" title="run recon → surface → scan for you"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>Auto-run</button>
+  <span class="spacer"></span>
+  <button id="btn-config" title="custom headers / User-Agent">Config</button>
+  <button id="btn-request">Send request</button>
+  <button id="btn-report">Report</button>
+  <span id="status"></span>
+</header>
+
+<main>
+  <section id="graph-pane">
+    <div id="graph"></div>
+    <div id="legend">
+      <span class="dot crit"></span>critical
+      <span class="dot high"></span>high
+      <span class="dot med"></span>medium
+      <span class="dot low"></span>low
+      <span class="dot none"></span>no finding
+      <span class="sep"></span>
+      <span class="badge-demo">N</span> untested classes (what to find)
+    </div>
+  </section>
+
+  <aside id="side">
+    <nav id="tabs">
+      <button data-tab="find" class="active">What to find</button>
+      <button data-tab="node">Node</button>
+      <button data-tab="run">Run anything</button>
+      <button data-tab="findings">Findings</button>
+      <button data-tab="next">Hints</button>
+    </nav>
+
+    <div id="tab-find" class="tab active">
+      <h2>Attack surface — what to find</h2>
+      <p class="muted">Every applicable vuln class and whether it is tested. Classes
+      with no scanner (subdomain takeover, TLS/SSL, DNS, headers) are tracked too.</p>
+      <table id="coverage-table"><tbody></tbody></table>
+    </div>
+
+    <div id="tab-node" class="tab">
+      <h2 id="node-title">Select a node</h2>
+      <div id="node-body" class="muted">Click a node in the graph.</div>
+    </div>
+
+    <div id="tab-run" class="tab">
+      <h2>Run anything — your flow</h2>
+      <p class="muted">No fixed sequence. Run any tool, any pipeline, any order.</p>
+      <input id="tool-filter" placeholder="filter tools…">
+      <div id="tool-list"></div>
+      <h3>Pipelines</h3>
+      <div id="pipeline-list"></div>
+    </div>
+
+    <div id="tab-findings" class="tab">
+      <h2>Findings</h2>
+      <div id="findings-list" class="muted">none yet</div>
+    </div>
+
+    <div id="tab-next" class="tab">
+      <h2>Advisor hints</h2>
+      <p class="muted">Suggestions only — never a gate. You drive.</p>
+      <div id="next-list"></div>
+    </div>
+  </aside>
+</main>
+
+<div id="modal" class="hidden"><div id="modal-box">
+  <h3 id="modal-title"></h3>
+  <textarea id="modal-input"></textarea>
+  <div id="modal-actions">
+    <button id="modal-ok">OK</button>
+    <button id="modal-cancel">Cancel</button>
+  </div>
+</div></div>
+
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

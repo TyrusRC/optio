@@ -1,23 +1,39 @@
-"""A small HTTP API over OptioService — the automation surface.
+"""The JSON route table over OptioService — the automation surface.
 
-Zero extra dependencies (stdlib ``http.server``). JSON in, JSON out. Drive Optio
-from scripts, CI, or any HTTP client without the TUI and without any external
-engine. Routes:
+Zero extra dependencies (stdlib ``http.server``). JSON in, JSON out. These
+routes back both the web UI (``optio.web`` serves the SPA over them) and any
+script or CI client. Routes:
 
     GET  /health
     GET  /targets                      list targets
     POST /targets                      {name, tech?, notes?, proxy?}
     GET  /targets/{name}               one target
+    GET  /targets/{name}/config        per-target headers / User-Agent
+    POST /targets/{name}/config        {config} | {headers?, user_agent?}
     GET  /targets/{name}/coverage      ran vs open tools
-    GET  /targets/{name}/next          ranked next actions
+    GET  /targets/{name}/coverage-classes  what-to-find board (by vuln class)
+    POST /targets/{name}/coverage-classes  {vuln_class, status, note?}
+    GET  /targets/{name}/next          ranked next actions (auto Haruspex)
+    GET  /targets/{name}/surface       attack-surface graph {nodes, edges}
+    GET  /targets/{name}/assets        surface assets
+    POST /targets/{name}/assets        {kind, value, parent_id?, data?}
     GET  /targets/{name}/findings      findings
-    POST /targets/{name}/findings      {title, vuln_class?, endpoint?, severity?}
+    POST /targets/{name}/findings      {title, vuln_class?, endpoint?, severity?,
+                                        status?, impact?, remediation?, cwe?, cvss?,
+                                        reproduction?, evidence_request_id?}
+    POST /targets/{name}/request       {method, url, headers?, body?, proxy?, verify?}
+    POST /targets/{name}/request-raw   {raw, scheme?, proxy?, verify?}  -> send a raw request
+    GET  /targets/{name}/requests      captured requests (durable evidence)
+    GET  /targets/{name}/requests/{id} one captured request/response
+    GET  /targets/{name}/report        {markdown} client report (confirmed findings)
     POST /targets/{name}/run           {tool, command?, proxy?}  -> runs a tool
     POST /targets/{name}/run-pipeline  {pipeline}                -> runs a chain
+    POST /targets/{name}/auto-run      {max_steps?, phases?}     -> smart early flow
     GET  /catalog                      catalog tools
     GET  /pipelines                    pipelines
 
-Run it: ``optio-api`` (the ``serve`` entry point) or ``make_server(service).serve_forever()``.
+Embed with ``make_server(service)`` (JSON only) or run ``optio`` for the full
+web UI, which serves these same routes.
 """
 
 from __future__ import annotations
@@ -39,6 +55,13 @@ class _BadRequest(Exception):
 
 
 def _route(svc: OptioService, method: str, path: str, body: dict):
+    # /targets/{name}/requests/{id}
+    rq = re.fullmatch(r"/targets/([^/]+)/requests/(\d+)", path)
+    if rq and method == "GET":
+        one = svc.get_request(int(rq.group(2)))
+        if one is None:
+            raise _NotFound(f"no request {rq.group(2)}")
+        return one
     # /targets/{name}/...
     m = re.fullmatch(r"/targets/([^/]+)(?:/(\w[\w-]*))?", path)
     if path == "/health":
@@ -76,8 +99,55 @@ def _route(svc: OptioService, method: str, path: str, body: dict):
                                        vuln_class=body.get("vuln_class", ""),
                                        endpoint=body.get("endpoint", ""),
                                        severity=body.get("severity", "low"),
-                                       notes=body.get("notes", ""))
+                                       status=body.get("status", "suspected"),
+                                       notes=body.get("notes", ""),
+                                       impact=body.get("impact", ""),
+                                       remediation=body.get("remediation", ""),
+                                       cwe=body.get("cwe", ""),
+                                       cvss=body.get("cvss", ""),
+                                       reproduction=body.get("reproduction", ""),
+                                       evidence_request_id=body.get("evidence_request_id"))
             return svc.findings(name)
+        if sub == "requests":
+            return svc.requests(name)
+        if sub == "config":
+            if method == "POST":
+                cfg = body.get("config")
+                if cfg is None:
+                    cfg = {k: body[k] for k in ("headers", "user_agent") if k in body}
+                return svc.set_config(name, cfg)
+            return svc.get_config(name)
+        if sub == "surface":
+            return svc.surface_graph(name)
+        if sub == "assets":
+            if method == "POST":
+                if not body.get("value"):
+                    raise _BadRequest("value is required")
+                return svc.record_asset(name, body.get("kind", "endpoint"), body["value"],
+                                        parent_id=body.get("parent_id"), data=body.get("data"))
+            return svc.list_assets(name)
+        if sub == "coverage-classes":
+            if method == "POST":
+                if not body.get("vuln_class"):
+                    raise _BadRequest("vuln_class is required")
+                return svc.record_class_coverage(name, body["vuln_class"],
+                                                 body.get("status", "tested"),
+                                                 note=body.get("note", ""))
+            return svc.coverage_board(name)
+        if sub == "report":
+            return {"markdown": svc.report(name, audience=body.get("audience", "client")
+                                           if method == "POST" else "client")}
+        if sub == "request" and method == "POST":
+            if not body.get("url"):
+                raise _BadRequest("url is required")
+            return svc.send_request(name, body.get("method", "GET"), body["url"],
+                                    headers=body.get("headers"), body=body.get("body", ""),
+                                    proxy=body.get("proxy"), verify=body.get("verify", True))
+        if sub == "request-raw" and method == "POST":
+            if not body.get("raw"):
+                raise _BadRequest("raw is required")
+            return svc.send_raw(name, body["raw"], scheme=body.get("scheme", "https"),
+                                proxy=body.get("proxy"), verify=body.get("verify", True))
         if sub == "run" and method == "POST":
             if not body.get("tool"):
                 raise _BadRequest("tool is required")
@@ -87,7 +157,29 @@ def _route(svc: OptioService, method: str, path: str, body: dict):
             if not body.get("pipeline"):
                 raise _BadRequest("pipeline is required")
             return svc.run_pipeline(name, body["pipeline"])
+        if sub == "auto-run" and method == "POST":
+            kw = {}
+            if body.get("max_steps"):
+                kw["max_steps"] = int(body["max_steps"])
+            if body.get("phases"):
+                kw["phases"] = tuple(body["phases"])
+            return svc.auto_run(name, **kw)
     raise _NotFound(f"no route {method} {path}")
+
+
+def dispatch(svc: OptioService, method: str, path: str, body: dict) -> tuple[int, object]:
+    """Run a route and map exceptions to (status, payload). Shared by the JSON
+    API handler and the web UI server so both behave identically."""
+    try:
+        return 200, _route(svc, method, path, body)
+    except _NotFound as e:
+        return 404, {"error": str(e)}
+    except _BadRequest as e:
+        return 400, {"error": str(e)}
+    except (ValueError, KeyError) as e:
+        return 400, {"error": f"bad request: {e}"}
+    except Exception as e:  # never leak a stack trace to the client
+        return 500, {"error": f"internal error: {e}"}
 
 
 def _handler_class(svc: OptioService):
@@ -108,16 +200,11 @@ def _handler_class(svc: OptioService):
                 length = int(self.headers.get("Content-Length") or 0)
                 if length:
                     body = json.loads(self.rfile.read(length).decode("utf-8"))
-                result = _route(svc, method, self.path.split("?", 1)[0], body)
-                self._send(200, result)
-            except _NotFound as e:
-                self._send(404, {"error": str(e)})
-            except _BadRequest as e:
-                self._send(400, {"error": str(e)})
             except (ValueError, KeyError) as e:
                 self._send(400, {"error": f"bad request: {e}"})
-            except Exception as e:  # never leak a stack trace to the client
-                self._send(500, {"error": f"internal error: {e}"})
+                return
+            status, payload = dispatch(svc, method, self.path.split("?", 1)[0], body)
+            self._send(status, payload)
 
         def do_GET(self):
             self._dispatch("GET")
@@ -132,29 +219,7 @@ def _handler_class(svc: OptioService):
 
 
 def make_server(service: OptioService, host: str = "127.0.0.1", port: int = 8787) -> ThreadingHTTPServer:
+    """Build the JSON-only API server. The web UI (``optio.web``) wraps the same
+    routes and serves the SPA alongside them; this bare server is for embedding
+    and tests."""
     return ThreadingHTTPServer((host, port), _handler_class(service))
-
-
-def serve(argv: list[str] | None = None) -> None:
-    """CLI entry point: start the API over the real on-disk store.
-
-    Bind defaults to loopback — the API runs tools and reads findings, so it
-    stays local unless the operator opts out explicitly.
-    """
-    import argparse
-
-    from optio import paths
-    from optio.store import Store
-
-    parser = argparse.ArgumentParser(prog="optio-api", description="Optio automation API")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8787)
-    args = parser.parse_args(argv)
-
-    service = OptioService(Store(paths.db_path()))
-    server = make_server(service, host=args.host, port=args.port)
-    print(f"optio-api on http://{args.host}:{args.port}  (ctrl-c to stop)")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        server.shutdown()

@@ -20,7 +20,10 @@ DEFAULT_URL = "http://127.0.0.1:3000"
 
 
 def default_url() -> str:
-    return (os.environ.get("HARUSPEX_URL")
+    # Optio-native var first (a user who never touches Praetor configures this),
+    # then the generic var, then a Praetor var last for a shared single-host box.
+    return (os.environ.get("OPTIO_HARUSPEX_URL")
+            or os.environ.get("HARUSPEX_URL")
             or os.environ.get("PRAETOR_DECISION_BASE_URL")
             or DEFAULT_URL)
 

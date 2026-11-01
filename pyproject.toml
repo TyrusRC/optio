@@ -10,13 +10,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
-    "textual>=0.80",
     "pyyaml>=6.0",
 ]
 
 [project.scripts]
 optio = "optio.__main__:main"
-optio-api = "optio.api:serve"
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -26,6 +24,7 @@ packages = ["src/optio"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/optio/data" = "optio/data"
+"src/optio/web/static" = "optio/web/static"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -61,6 +61,89 @@ CLASS_TO_TOOL: dict[str, str] = {
     "rce": "commix",
 }
 
+# Infra / recon classes that NO catalog tool covers end-to-end. The old
+# tool-list coverage model dropped these entirely — a class with no tool was
+# invisible. They are always applicable to a web target and are tested manually
+# (or with a tool the operator wires in), so they appear in the coverage board
+# as untested until proven, never silently missed.
+INFRA_CLASSES: dict[str, str] = {
+    "subdomain_takeover": "Check every CNAME/alias for a dangling pointer to an "
+                          "unclaimed service (S3, GitHub Pages, Heroku, Azure, ...).",
+    "tls_ssl": "Review TLS: protocol versions, weak ciphers, cert validity/chain, "
+               "HSTS. (testssl.sh / sslscan / tlsx).",
+    "dns": "Check DNS: zone transfer (AXFR), wildcard, dangling records, SPF/DMARC.",
+    "security_headers": "Review response headers: CSP, X-Frame-Options, HSTS, "
+                        "cookie flags. Report only chained to impact.",
+}
+
+# How each app/authz/auth vuln class is tested when it has no dedicated tool —
+# a short manual instruction so the class is actionable, not a bare name.
+MANUAL_ACTIONS: dict[str, str] = {
+    "idor": "Swap an object id/UUID for another user's and replay with your session.",
+    "bola": "Same as IDOR at the object level across roles (test_auth_matrix-style).",
+    "auth_bypass": "Force-browse protected routes; tamper role/JWT claims; check gates.",
+    "ssrf": "Point a URL/callback param at an internal/metadata address; watch for OOB.",
+    "ssti": "Inject a template expression (e.g. {{7*7}}) into reflected inputs.",
+    "xxe": "Submit XML with an external entity; watch for file read / OOB.",
+    "path_traversal": "Walk ../ sequences in file/path params; read a known file.",
+    "lfi": "Include a local file via a path/page param; confirm contents.",
+    "open_redirect": "Set a redirect/next param to an external host; confirm the 30x.",
+    "prototype_pollution": "Inject __proto__/constructor keys; check polluted behaviour.",
+    "mass_assignment": "Add privileged fields (role, is_admin) to a write body.",
+    "deserialization": "Submit a crafted serialized object to a sink that deserializes.",
+    "graphql": "Introspect the schema; test field authz, batching, injection.",
+    "race_condition": "Fire the state-changing request concurrently; check for TOCTOU.",
+    "business_logic": "Reorder/skip/replay steps; tamper price/quantity/state.",
+    "info_disclosure": "Collect leaked paths/versions/errors; escalate, do not file alone.",
+}
+
+
+def applicable_classes(techs: list[str]) -> list[str]:
+    """Every vuln class worth tracking for this target: the tech-prioritised app
+    classes PLUS the infra classes that are always in scope for a web target.
+
+    The infra classes are the ones the tool-list model missed. They come last
+    (recon output, Rule 29) but they are never dropped."""
+    out = classes_for_tech(techs)
+    for cls in INFRA_CLASSES:
+        if cls not in out:
+            out.append(cls)
+    return out
+
+
+def action_for_class(vuln_class: str) -> tuple[str | None, str]:
+    """Return ``(tool, action_text)`` for a class: the catalog tool if one tests
+    it, else None and a manual instruction. Never returns an empty action."""
+    tool = CLASS_TO_TOOL.get(vuln_class)
+    if tool:
+        return tool, f"Run {tool} against the parameter."
+    if vuln_class in INFRA_CLASSES:
+        return None, INFRA_CLASSES[vuln_class]
+    if vuln_class in MANUAL_ACTIONS:
+        return None, MANUAL_ACTIONS[vuln_class]
+    return None, f"Test {vuln_class} manually against the relevant inputs."
+
+
+# Recon-phase tools, ordered by value — active resolve / port-service discovery
+# first, passive subdomain/OSINT enumeration last. The advisor sorts the open
+# recon tools by this instead of catalog position, so "run subfinder" is no
+# longer the default just because it is first in the YAML. Tools absent here
+# sort after the listed ones.
+RECON_ORDER: list[str] = [
+    "groma", "naabu", "nmap", "masscan",   # ports + services (high signal)
+    "dnsx", "tlsx", "asnmap", "cdncheck",  # resolve / TLS / network mapping
+    "subfinder", "amass", "assetfinder", "chaos", "shuffledns", "alterx",
+    "dnsgen", "uncover", "theharvester",   # passive subdomain / OSINT
+]
+
+
+def recon_rank(tool_name: str) -> int:
+    """Value rank of a recon tool; unknown tools sort after the known ones."""
+    try:
+        return RECON_ORDER.index(tool_name)
+    except ValueError:
+        return len(RECON_ORDER)
+
 
 def classes_for_tech(techs: list[str]) -> list[str]:
     """Ordered, de-duplicated vuln classes for a set of detected techs."""

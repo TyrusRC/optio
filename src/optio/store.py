@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS targets (
     notes         TEXT NOT NULL DEFAULT '',
     proxy         TEXT NOT NULL DEFAULT '',
     artifacts_dir TEXT NOT NULL DEFAULT '',
+    config        TEXT NOT NULL DEFAULT '{}',
     created_at    REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS runs (
@@ -52,9 +53,59 @@ CREATE TABLE IF NOT EXISTS findings (
     severity   TEXT NOT NULL DEFAULT 'low',
     status     TEXT NOT NULL DEFAULT 'suspected',
     notes      TEXT NOT NULL DEFAULT '',
+    impact              TEXT NOT NULL DEFAULT '',
+    remediation         TEXT NOT NULL DEFAULT '',
+    cwe                 TEXT NOT NULL DEFAULT '',
+    cvss                TEXT NOT NULL DEFAULT '',
+    reproduction        TEXT NOT NULL DEFAULT '',
+    evidence_request_id INTEGER,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS requests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    target       TEXT NOT NULL,
+    method       TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    req_headers  TEXT NOT NULL DEFAULT '{}',
+    req_body     TEXT NOT NULL DEFAULT '',
+    status       INTEGER NOT NULL DEFAULT 0,
+    resp_headers TEXT NOT NULL DEFAULT '{}',
+    resp_body    TEXT NOT NULL DEFAULT '',
+    elapsed_ms   INTEGER NOT NULL DEFAULT 0,
+    sent_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_requests_target ON requests(target);
+CREATE TABLE IF NOT EXISTS assets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    target     TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    parent_id  INTEGER,
+    data       TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL,
+    UNIQUE (target, kind, value)
+);
+CREATE INDEX IF NOT EXISTS idx_assets_target ON assets(target);
+CREATE TABLE IF NOT EXISTS coverage (
+    target     TEXT NOT NULL,
+    vuln_class TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'untested',
+    note       TEXT NOT NULL DEFAULT '',
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (target, vuln_class)
+);
 """
+
+# Columns added to `findings` after the first release. Each is applied to an
+# existing table on open, so a store from an older Optio keeps working.
+_FINDING_ADDED_COLUMNS = {
+    "impact": "TEXT NOT NULL DEFAULT ''",
+    "remediation": "TEXT NOT NULL DEFAULT ''",
+    "cwe": "TEXT NOT NULL DEFAULT ''",
+    "cvss": "TEXT NOT NULL DEFAULT ''",
+    "reproduction": "TEXT NOT NULL DEFAULT ''",
+    "evidence_request_id": "INTEGER",
+}
 
 # Worst-first ordering for the findings board.
 _SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -71,7 +122,18 @@ class Store:
         self._lock = threading.RLock()
         with self._lock:
             self._db.executescript(_SCHEMA)
+            self._migrate()
             self._db.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that newer releases expect to pre-existing tables."""
+        have = {r["name"] for r in self._db.execute("PRAGMA table_info(findings)")}
+        for col, decl in _FINDING_ADDED_COLUMNS.items():
+            if col not in have:
+                self._db.execute(f"ALTER TABLE findings ADD COLUMN {col} {decl}")
+        tcols = {r["name"] for r in self._db.execute("PRAGMA table_info(targets)")}
+        if "config" not in tcols:
+            self._db.execute("ALTER TABLE targets ADD COLUMN config TEXT NOT NULL DEFAULT '{}'")
 
     def close(self) -> None:
         with self._lock:
@@ -98,10 +160,18 @@ class Store:
             rows = self._db.execute("SELECT * FROM targets ORDER BY created_at").fetchall()
         return [self._target_row(r) for r in rows]
 
+    def set_config(self, name: str, config: dict) -> None:
+        """Set per-target config (e.g. ``{headers: {...}, user_agent: "..."}``)."""
+        with self._lock:
+            self._db.execute("UPDATE targets SET config=? WHERE name=?",
+                             (json.dumps(config or {}), name))
+            self._db.commit()
+
     @staticmethod
     def _target_row(row: sqlite3.Row) -> dict:
         d = dict(row)
         d["tech"] = json.loads(d["tech"])
+        d["config"] = json.loads(d["config"] or "{}")
         return d
 
     # ── coverage ledger ─────────────────────────────────────────────────────
@@ -152,12 +222,16 @@ class Store:
 
     # ── findings ────────────────────────────────────────────────────────────
     def add_finding(self, target: str, title: str, vuln_class: str = "", endpoint: str = "",
-                    severity: str = "low", status: str = "suspected", notes: str = "") -> int:
+                    severity: str = "low", status: str = "suspected", notes: str = "",
+                    impact: str = "", remediation: str = "", cwe: str = "", cvss: str = "",
+                    reproduction: str = "", evidence_request_id: int | None = None) -> int:
         with self._lock:
             cur = self._db.execute(
-                "INSERT INTO findings(target, title, vuln_class, endpoint, severity, status, notes, created_at)"
-                " VALUES (?,?,?,?,?,?,?,?)",
-                (target, title, vuln_class, endpoint, severity, status, notes, time.time()))
+                "INSERT INTO findings(target, title, vuln_class, endpoint, severity, status, notes,"
+                " impact, remediation, cwe, cvss, reproduction, evidence_request_id, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (target, title, vuln_class, endpoint, severity, status, notes,
+                 impact, remediation, cwe, cvss, reproduction, evidence_request_id, time.time()))
             self._db.commit()
             return cur.lastrowid
 
@@ -172,3 +246,92 @@ class Store:
         with self._lock:
             self._db.execute("UPDATE findings SET status=? WHERE id=?", (status, finding_id))
             self._db.commit()
+
+    # ── captured requests (durable evidence) ─────────────────────────────────
+    def record_request(self, target: str, method: str, url: str,
+                       req_headers: dict | None = None, req_body: str = "",
+                       status: int = 0, resp_headers: dict | None = None,
+                       resp_body: str = "", elapsed_ms: int = 0) -> int:
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO requests(target, method, url, req_headers, req_body, status,"
+                " resp_headers, resp_body, elapsed_ms, sent_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (target, method, url, json.dumps(req_headers or {}), req_body, status,
+                 json.dumps(resp_headers or {}), resp_body, elapsed_ms, time.time()))
+            self._db.commit()
+            return cur.lastrowid
+
+    def get_request(self, request_id: int) -> dict | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
+        return self._request_row(row) if row else None
+
+    def requests_for_target(self, target: str, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM requests WHERE target=? ORDER BY sent_at DESC, id DESC LIMIT ?",
+                (target, limit)).fetchall()
+        return [self._request_row(r) for r in rows]
+
+    @staticmethod
+    def _request_row(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["req_headers"] = json.loads(d["req_headers"])
+        d["resp_headers"] = json.loads(d["resp_headers"])
+        return d
+
+    # ── attack-surface assets (the graph) ────────────────────────────────────
+    def add_asset(self, target: str, kind: str, value: str,
+                  parent_id: int | None = None, data: dict | None = None) -> int:
+        """Insert an asset, or return the id of the existing (kind, value).
+
+        Dedupes so the same host found twice is one node. A later call with a
+        parent or data fills those in if the first call left them empty.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id FROM assets WHERE target=? AND kind=? AND value=?",
+                (target, kind, value)).fetchone()
+            if row:
+                aid = row["id"]
+                if parent_id is not None:
+                    self._db.execute("UPDATE assets SET parent_id=? WHERE id=? AND parent_id IS NULL",
+                                     (parent_id, aid))
+                if data:
+                    self._db.execute("UPDATE assets SET data=? WHERE id=?",
+                                     (json.dumps(data), aid))
+                self._db.commit()
+                return aid
+            cur = self._db.execute(
+                "INSERT INTO assets(target, kind, value, parent_id, data, created_at)"
+                " VALUES (?,?,?,?,?,?)",
+                (target, kind, value, parent_id, json.dumps(data or {}), time.time()))
+            self._db.commit()
+            return cur.lastrowid
+
+    def assets_for_target(self, target: str) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM assets WHERE target=? ORDER BY id", (target,)).fetchall()
+        return [self._asset_row(r) for r in rows]
+
+    @staticmethod
+    def _asset_row(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["data"] = json.loads(d["data"])
+        return d
+
+    # ── coverage by vuln class ───────────────────────────────────────────────
+    def record_coverage(self, target: str, vuln_class: str, status: str,
+                        note: str = "") -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT OR REPLACE INTO coverage(target, vuln_class, status, note, updated_at)"
+                " VALUES (?,?,?,?,?)", (target, vuln_class, status, note, time.time()))
+            self._db.commit()
+
+    def class_coverage_map(self, target: str) -> dict[str, str]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT vuln_class, status FROM coverage WHERE target=?", (target,)).fetchall()
+        return {r["vuln_class"]: r["status"] for r in rows}

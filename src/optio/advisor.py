@@ -19,11 +19,23 @@ ladder stands on its own.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from optio.catalog import Tool
+from optio.context import is_ip
 from optio.flow import PHASE_ORDER
-from optio.knowledge import CLASS_TO_TOOL, classes_for_tech
+from optio.knowledge import (
+    CLASS_TO_TOOL,
+    action_for_class,
+    applicable_classes,
+    classes_for_tech,
+    recon_rank,
+)
+
+# A ranker takes the runnable tool names and returns them best-first, or None to
+# abstain (offline / unsure). Haruspex supplies one; the flow stays pure.
+Ranker = Callable[[list[str]], "list[str] | None"]
 
 _OPEN_STATUSES = {"suspected", "unconfirmed", "", None}
 
@@ -90,6 +102,10 @@ def suggest(
     # creds / mobile tools are a different target type (catalog- and
     # pipeline-runnable, but never auto-suggested here).
     host_catalog = [t for t in catalog if t.host_targetable()]
+    # A bare IP has no domain to enumerate — drop tools that need {domain}
+    # (subfinder/amass/gau/...). Host/URL tools (nmap/httpx/nuclei) still apply.
+    if target_values and is_ip(target_values.get("host") or target_values.get("domain") or ""):
+        host_catalog = [t for t in host_catalog if "domain" not in t.placeholders()]
     phase_done: dict[str, bool] = {}
     for phase in PHASE_ORDER:
         phase_tools = [t for t in host_catalog if t.phase == phase]
@@ -104,6 +120,10 @@ def suggest(
                     ranks = [class_rank.get(c, 99) for c in t.classes] or [99]
                     return min(ranks)
                 unrun = sorted(unrun, key=key)
+            # In recon, order by value (active discovery before passive enum),
+            # not by catalog position — so "run subfinder" is not the default.
+            elif phase == "recon":
+                unrun = sorted(unrun, key=lambda t: recon_rank(t.name))
             base = 2 + PHASE_ORDER.index(phase)
             for i, t in enumerate(unrun):
                 out.append(Suggestion(
@@ -130,3 +150,45 @@ def suggest(
 
     out.sort(key=lambda s: s.priority)
     return out[:max_suggestions]
+
+
+def class_coverage(tech: list[str], covered: dict[str, str]) -> list[dict]:
+    """The coverage board, by vuln class — the completeness view.
+
+    Lists every applicable class (tech classes + always-on infra classes), its
+    status from ``covered`` (``untested`` when absent), and the action that
+    tests it: a catalog tool, or a manual instruction when no tool exists. This
+    is why a class with no scanner (subdomain takeover, TLS/SSL) is tracked
+    instead of silently skipped.
+    """
+    out: list[dict] = []
+    for cls in applicable_classes(tech):
+        tool, action = action_for_class(cls)
+        out.append({"vuln_class": cls,
+                    "status": covered.get(cls, "untested"),
+                    "tool": tool,
+                    "action": action})
+    return out
+
+
+def rerank(suggestions: list[Suggestion], ranker: Ranker) -> list[Suggestion]:
+    """Reorder the runnable (tool-bearing) suggestions by ``ranker``.
+
+    The deterministic ladder decides which tools are open and where manual steps
+    (verify/report) sit; Haruspex only permutes the tool suggestions among the
+    slots they already occupy. Fail-open: ``ranker`` returning None (or raising)
+    leaves the order untouched, so the ladder always stands on its own.
+    """
+    tool_sugs = [s for s in suggestions if s.tool]
+    if not tool_sugs:
+        return suggestions
+    try:
+        order = ranker([s.tool for s in tool_sugs])
+    except Exception:
+        order = None
+    if not order:
+        return suggestions
+    rank = {t: i for i, t in enumerate(order)}
+    ordered = sorted(tool_sugs, key=lambda s: rank.get(s.tool, len(order)))
+    it = iter(ordered)
+    return [next(it) if s.tool else s for s in suggestions]
