@@ -33,6 +33,9 @@ None carries all three for *your own* toolset. Optio does.
   keystroke away.
 - **Your own arsenal.** An editable catalog of ~70 tools across recon, web scan,
   network, AD, cloud, code/secrets, and cracking. Add your own; Optio drives them.
+- **Nothing to memorise.** The footer always shows the keys. `ctrl+p` opens a
+  command palette — type a word and Optio finds the tool across the whole
+  catalog, so you never have to recall which one does what.
 - **Pipelines.** Run a named chain of tools in one keystroke (`recon-sweep`,
   `web-scan`, `full-web`, `network`, …) — autorun to cut the manual per-tool loop.
 - **Standalone.** Nothing to install but your own tools. Route traffic through a
@@ -64,8 +67,10 @@ uv run optio
 `uv run pytest`.
 
 **Keys:** `a` add a target · `r` run the next suggested action (review the
-command, then confirm) · `p` run a pipeline · `h` re-rank with Haruspex · `f`
-show the full output of the last run · `q` quit.
+command, then confirm) · `p` run a pipeline · `ctrl+p` open the command palette
+— type a word, Optio finds the tool across the whole catalog and recalls its
+flags · `h` re-rank with Haruspex · `f` show the full output of the last run ·
+`q` quit. The footer always shows the keys, so there is nothing to memorise.
 
 State lives in your XDG dirs: config and your catalog in `~/.config/optio/`, the
 SQLite store in `~/.local/share/optio/`. Set `OPTIO_HOME` to point all of it

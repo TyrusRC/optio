@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import asyncio
 
+from functools import partial
+
 from textual import work
 from textual.app import App, ComposeResult
+from textual.command import Hit, Hits, Provider
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, ListItem, ListView, Label, Static
 
@@ -24,7 +27,28 @@ from optio.flow import phase_rank
 from optio.pipeline import build_command, load_default_pipelines, load_pipelines
 from optio.store import Store
 from optio.summarize import summarize
+from optio.tui.commands import Command, match_commands
 from optio.tui.modals import PromptModal
+
+
+class OptioCommands(Provider):
+    """Command palette (ctrl+p): type a tool or pipeline name, launch it.
+
+    The "no learning" surface — the operator searches ~70 tools by word instead
+    of memorising them. Ranking lives in ``match_commands``; this is glue.
+    """
+
+    async def search(self, query: str) -> Hits:
+        app = self.app
+        assert isinstance(app, OptioApp)
+        total = max(len(app.catalog) + len(app.pipelines), 1)
+        for i, cmd in enumerate(match_commands(app.catalog, app.pipelines, query)):
+            yield Hit(
+                (total - i) / total,  # keep matcher order: earlier = higher score
+                cmd.title,
+                partial(app.run_command, cmd),
+                help=f"{cmd.kind} · recalls last flags, review before it runs",
+            )
 
 
 class OptioApp(App):
@@ -43,10 +67,13 @@ class OptioApp(App):
         ("a", "add_target", "Add target"),
         ("r", "run_suggested", "Run next action"),
         ("p", "run_pipeline", "Run pipeline"),
+        ("ctrl+p", "command_palette", "Find a tool"),
         ("h", "haruspex_hint", "Haruspex rank"),
         ("f", "full_output", "Full output"),
         ("q", "quit", "Quit"),
     ]
+
+    COMMANDS = App.COMMANDS | {OptioCommands}
 
     def __init__(self, store: Store | None = None) -> None:
         super().__init__()
@@ -171,8 +198,24 @@ class OptioApp(App):
         if not s or not s.tool:
             self.notify("Top action is manual — no tool to run.", severity="warning")
             return
-        tool = next((t for t in self.catalog if t.name == s.tool), None)
+        await self._do_run_tool(name, s.tool)
+
+    @work
+    async def run_command(self, cmd: Command) -> None:
+        """Launch a palette choice — a tool (with confirm) or a whole pipeline."""
+        name = self._current_target()
+        if not name:
+            self.notify("Add and select a target first.", severity="warning")
+            return
+        if cmd.kind == "pipeline":
+            await self._do_run_pipeline(name, cmd.name)
+        else:
+            await self._do_run_tool(name, cmd.name)
+
+    async def _do_run_tool(self, name: str, tool_name: str) -> None:
+        tool = next((t for t in self.catalog if t.name == tool_name), None)
         if not tool:
+            self.notify(f"No tool named {tool_name!r}.", severity="warning")
             return
         tvals = target_values(name)
         initial = self.store.get_flags(name, tool.name) or tool.render_partial(tvals)
@@ -208,9 +251,12 @@ class OptioApp(App):
             confirm_label="Run", note=f"available: {names}"))
         if not choice:
             return
-        pipe = next((p for p in self.pipelines if p.name == choice.strip()), None)
+        await self._do_run_pipeline(name, choice.strip())
+
+    async def _do_run_pipeline(self, name: str, pipe_name: str) -> None:
+        pipe = next((p for p in self.pipelines if p.name == pipe_name), None)
         if not pipe:
-            self.notify(f"No pipeline named {choice!r}.", severity="warning")
+            self.notify(f"No pipeline named {pipe_name!r}.", severity="warning")
             return
         tvals = target_values(name)
         proxy = (self.store.get_target(name) or {}).get("proxy") or None

@@ -9,6 +9,8 @@ from optio.tui.app import OptioApp
 
 
 async def _scenario(store):
+    from optio.tui.app import OptioCommands
+
     app = OptioApp(store=store)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -20,7 +22,14 @@ async def _scenario(store):
         # pipelines are loaded and the new bindings exist
         assert any(p.name == "recon-sweep" for p in app.pipelines)
         keys = {b[0] for b in app.BINDINGS}
-        assert {"p", "h"} <= keys
+        assert {"p", "h", "ctrl+p"} <= keys
+
+        # command palette: type a word, get a launchable hit back
+        assert OptioCommands in app.COMMANDS
+        provider = OptioCommands(app.screen)
+        hits = [h async for h in provider.search("nmap")]
+        assert hits and any("nmap" in h.text for h in hits)
+        assert callable(hits[0].command)  # a launch callback is wired
 
 
 def test_app_mounts_and_shows_next_action(tmp_path, monkeypatch):
