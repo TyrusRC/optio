@@ -264,8 +264,9 @@ stays global. The store contains:
   favorites and command history. This is the arsenal half.
 - **Findings / notes** — operator-written, with severity and free text.
 
-Store location is an open question (§11): per-engagement directory that travels
-with the work, or one global store keyed by target.
+Store location is decided (§11): one global store keyed by target, split by XDG
+data type, with a per-target `artifacts_dir` for raw output that travels with the
+engagement.
 
 ---
 
