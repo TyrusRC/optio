@@ -9,6 +9,7 @@ overrides all three at once (useful for tests and throwaway runs).
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -41,3 +42,13 @@ def db_path() -> Path:
 def user_catalog_dir() -> Path:
     """Where the operator drops their own catalog YAML files."""
     return config_dir() / "catalog"
+
+
+def artifacts_dir(name: str) -> Path:
+    """Per-target working directory for tool subprocesses. Tools run with this
+    as their CWD so reports they auto-save (nikto's JSON, vigil's report dir,
+    ...) land here instead of in the operator's CWD or the repo."""
+    slug = re.sub(r"[^\w.-]+", "_", name).strip("_") or "target"
+    d = data_dir() / "artifacts" / slug
+    d.mkdir(parents=True, exist_ok=True)
+    return d

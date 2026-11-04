@@ -16,7 +16,7 @@ from optio.service import OptioService
 from optio.store import Store
 
 
-def _fake_runner(command, proxy=None):
+def _fake_runner(command, proxy=None, cwd=None):
     return RunResult(exit_code=0, output=f"ran: {command}")
 
 

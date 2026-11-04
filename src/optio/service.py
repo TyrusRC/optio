@@ -11,6 +11,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 from dataclasses import asdict
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from optio import haruspex, http, paths, report
@@ -148,6 +149,16 @@ class OptioService:
         return [asdict(s) for s in sugs]
 
     # ── execution ───────────────────────────────────────────────────────────
+    def _run_cwd(self, name: str) -> str:
+        """Working directory for a target's tool subprocesses: the target's
+        configured ``artifacts_dir`` if set, else a per-target dir under the
+        data home. Keeps tool-written reports out of the operator's CWD/repo."""
+        configured = ((self.store.get_target(name) or {}).get("artifacts_dir") or "").strip()
+        if configured:
+            Path(configured).mkdir(parents=True, exist_ok=True)
+            return configured
+        return str(paths.artifacts_dir(name))
+
     def run_tool(self, name: str, tool: str, command: str | None = None,
                  proxy: str | None = None) -> dict:
         t = self._by_name.get(tool)
@@ -159,7 +170,7 @@ class OptioService:
             if command is None:
                 return {"error": reason, "tool": tool}
         proxy = proxy or (self.store.get_target(name) or {}).get("proxy") or None
-        result = self.runner(command, proxy)
+        result = self.runner(command, proxy, cwd=self._run_cwd(name))
         summary = summarize(tool, result.exit_code, result.output)
         self.store.record_run(name, tool, command, result.exit_code, summary)
         self.store.save_flags(name, tool, command)
@@ -172,10 +183,11 @@ class OptioService:
             return [{"error": f"unknown pipeline: {pipeline}"}]
         tvals = target_values(name)
         proxy = (self.store.get_target(name) or {}).get("proxy") or None
+        cwd = self._run_cwd(name)
         results = run_pipeline(
             pipe, self._by_name, tvals,
             flag_lookup=lambda n: self.store.get_flags(name, n),
-            runner=lambda c: self.runner(c, proxy),
+            runner=lambda c: self.runner(c, proxy, cwd=cwd),
             recorder=lambda tl, cmd, code, summ: self.store.record_run(name, tl, cmd, code, summ),
         )
         return [asdict(r) for r in results]
@@ -318,7 +330,7 @@ class OptioService:
                 virtual_run.add(nxt.tool)
                 steps.append({"tool": nxt.tool, "skipped": reason})
                 continue
-            result = self.runner(command, proxy)
+            result = self.runner(command, proxy, cwd=self._run_cwd(name))
             summary = summarize(nxt.tool, result.exit_code, result.output)
             self.store.record_run(name, nxt.tool, command, result.exit_code, summary)
             self.store.save_flags(name, nxt.tool, command)

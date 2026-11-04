@@ -8,7 +8,7 @@ from optio.store import Store
 
 
 def _fake_runner(calls):
-    def runner(command, proxy=None):
+    def runner(command, proxy=None, cwd=None):
         calls.append((command, proxy))
         return RunResult(exit_code=0, output=f"ran: {command}")
     return runner
@@ -80,6 +80,29 @@ def test_run_pipeline(tmp_path):
     steps = svc.run_pipeline("ex.com", "recon-sweep")
     tools_ran = [s["tool"] for s in steps if not s.get("skipped")]
     assert "subfinder" in tools_ran and "httpx" in tools_ran
+
+
+def test_tools_run_in_a_per_target_artifacts_dir_not_cwd(tmp_path, monkeypatch):
+    # Tools that auto-save reports (nikto, vigil, ...) must not litter the
+    # operator's CWD / the repo — each runs in a per-target artifacts dir.
+    import os
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    seen = {}
+
+    def runner(command, proxy=None, cwd=None):
+        seen["cwd"] = cwd
+        return RunResult(exit_code=0, output="ok")
+
+    store = Store(tmp_path / "t.db")
+    svc = OptioService(store, runner=runner)
+    svc.add_target("https://ex.com:8443/app")
+    svc.run_tool("https://ex.com:8443/app", "httpx", command="httpx -u https://ex.com:8443")
+
+    assert seen["cwd"] and os.path.isdir(seen["cwd"])
+    assert os.path.realpath(seen["cwd"]) != os.path.realpath(os.getcwd())
+    assert str(tmp_path / "data") in seen["cwd"]
+    store.close()
 
 
 def test_findings_roundtrip(svc):
