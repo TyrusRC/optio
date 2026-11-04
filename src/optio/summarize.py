@@ -7,9 +7,16 @@ Tool-specific summarizers can be added later, keyed by tool name.
 
 from __future__ import annotations
 
+import re
+
+# Many CLI tools colour their output; the codes are noise in a one-line summary
+# (and show as garbage in the web status bar). Strip them at the source.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
 
 def summarize(tool: str, exit_code: int, output: str) -> str:
-    lines = [ln for ln in (output or "").splitlines() if ln.strip()]
+    clean = _ANSI.sub("", output or "")
+    lines = [ln for ln in clean.splitlines() if ln.strip()]
     status = "ok" if exit_code == 0 else f"exit {exit_code}"
     if not lines:
         return f"{tool} · {status} · no output"

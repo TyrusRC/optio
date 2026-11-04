@@ -38,3 +38,10 @@ def test_summary_names_exit_and_line_count():
 def test_summary_handles_empty_output():
     s = summarize("ffuf", exit_code=0, output="")
     assert "ffuf" in s
+
+
+def test_summary_strips_ansi_colour_codes():
+    # whatweb/httpx colour their output; the codes must not leak into the summary
+    s = summarize("whatweb", exit_code=0, output="\x1b[1m\x1b[34mhttps://x\x1b[0m [200]")
+    assert "\x1b" not in s
+    assert "https://x [200]" in s
