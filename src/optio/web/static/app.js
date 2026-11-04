@@ -24,11 +24,14 @@ async function api(method, path, body) {
 function setStatus(msg) { $("#status").textContent = msg || ""; }
 async function busy(msg, fn) {
   setStatus(msg + "…");
+  $("#status").classList.add("loading");      // animated spinner: shows the run is alive, not hung
   try {
     const r = await fn();
+    $("#status").classList.remove("loading");
     setTimeout(() => setStatus(""), 1500);   // clear only on success
     return r;
   } catch (e) {
+    $("#status").classList.remove("loading");
     setStatus("error: " + e.message);        // sticky — stays until the next action
     throw e;
   }
