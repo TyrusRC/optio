@@ -11,9 +11,10 @@
   <span class="brand">optio</span>
   <select id="target-select" title="target"></select>
   <button id="add-target">+ target</button>
-  <button id="btn-auto" title="run recon → surface → scan for you"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>Auto-run</button>
+  <button id="btn-auto" aria-label="Auto-run recon, surface and scan" title="run recon → surface → scan for you"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>Auto-run</button>
   <span class="spacer"></span>
-  <button id="btn-config" title="custom headers / User-Agent">Config</button>
+  <span id="proxy-ind" class="hidden" title="requests and tools route through this proxy"></span>
+  <button id="btn-config" title="proxy, headers, User-Agent, TLS">Config</button>
   <button id="btn-request">Send request</button>
   <button id="btn-report">Report</button>
   <span id="status"></span>
@@ -22,6 +23,13 @@
 <main>
   <section id="graph-pane">
     <div id="graph"></div>
+    <div id="onboard" class="hidden">
+      <h1>optio</h1>
+      <p>A terminal-style cockpit for web & network pentests.</p>
+      <p class="muted">Add a target to begin — a host or URL. Then run recon,
+      watch the attack surface build, and track what's left to find.</p>
+      <button id="onboard-add" class="btn-primary">+ Add your first target</button>
+    </div>
     <div id="legend">
       <span class="dot crit"></span>critical
       <span class="dot high"></span>high
@@ -39,6 +47,7 @@
       <button data-tab="node">Node</button>
       <button data-tab="run">Run anything</button>
       <button data-tab="findings">Findings</button>
+      <button data-tab="requests">Requests</button>
       <button data-tab="next">Hints</button>
     </nav>
 
@@ -56,16 +65,49 @@
 
     <div id="tab-run" class="tab">
       <h2>Run anything — your flow</h2>
-      <p class="muted">No fixed sequence. Run any tool, any pipeline, any order.</p>
-      <input id="tool-filter" placeholder="filter tools…">
-      <div id="tool-list"></div>
-      <h3>Pipelines</h3>
+      <p class="muted">No fixed sequence. Pick a pipeline for the fast path, or any
+      single tool. You see and can edit the exact command before it runs.</p>
+      <h3>Pipelines — one chain, many tools</h3>
       <div id="pipeline-list"></div>
+      <h3>Tools</h3>
+      <input id="tool-filter" placeholder="filter tools by name, lane, or phase…">
+      <label class="chk"><input type="checkbox" id="tool-installed-only"> installed only</label>
+      <div id="tool-list"></div>
     </div>
 
     <div id="tab-findings" class="tab">
       <h2>Findings</h2>
+      <button id="add-finding-btn">+ Add finding</button>
+      <form id="finding-form" class="hidden" autocomplete="off">
+        <input id="f-title" placeholder="title *" required>
+        <div class="form-row">
+          <select id="f-sev" title="severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low" selected>low</option>
+          </select>
+          <input id="f-class" placeholder="vuln class (e.g. xss)">
+        </div>
+        <input id="f-endpoint" placeholder="affected endpoint / URL">
+        <textarea id="f-impact" placeholder="impact"></textarea>
+        <select id="f-evidence" title="cite a captured request as evidence">
+          <option value="">— no evidence request —</option>
+        </select>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Save finding</button>
+          <button type="button" id="f-cancel">Cancel</button>
+        </div>
+      </form>
       <div id="findings-list" class="muted">none yet</div>
+    </div>
+
+    <div id="tab-requests" class="tab">
+      <h2>Captured requests</h2>
+      <p class="muted">Durable evidence — every request the repeater sent.
+      Click one to view it, then cite it when you add a finding.</p>
+      <div id="requests-list" class="muted">none yet</div>
+      <div id="request-detail"></div>
     </div>
 
     <div id="tab-next" class="tab">
@@ -80,8 +122,35 @@
   <h3 id="modal-title"></h3>
   <textarea id="modal-input"></textarea>
   <div id="modal-actions">
-    <button id="modal-ok">OK</button>
+    <button id="modal-ok" class="btn-primary">OK</button>
     <button id="modal-cancel">Cancel</button>
+  </div>
+</div></div>
+
+<div id="config-modal" class="hidden"><div id="modal-box">
+  <h3>Target config</h3>
+  <label class="fld">Proxy <small class="muted">— routes tools and requests through it (e.g. Burp)</small>
+    <input id="cfg-proxy" placeholder="http://127.0.0.1:8080"></label>
+  <div class="form-actions">
+    <button type="button" id="cfg-burp">Route through Burp (127.0.0.1:8080)</button>
+    <label class="chk"><input type="checkbox" id="cfg-verify"> verify TLS</label>
+  </div>
+  <label class="fld">User-Agent <input id="cfg-ua" placeholder="Mozilla/5.0 (optio)"></label>
+  <label class="fld">Extra headers <small class="muted">— one <code>Name: value</code> per line</small>
+    <textarea id="cfg-headers" placeholder="Authorization: Bearer …&#10;X-Api-Key: …"></textarea></label>
+  <div id="modal-actions">
+    <button id="cfg-save" class="btn-primary">Save</button>
+    <button id="cfg-cancel">Cancel</button>
+  </div>
+</div></div>
+
+<div id="report-modal" class="hidden"><div id="modal-box">
+  <h3>Client report <small class="muted">— confirmed findings only</small></h3>
+  <div id="report-body" class="report-body"></div>
+  <div id="modal-actions">
+    <button id="report-copy">Copy markdown</button>
+    <button id="report-download">Download .md</button>
+    <button id="report-close" class="btn-primary">Close</button>
   </div>
 </div></div>
 

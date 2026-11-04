@@ -10,6 +10,9 @@ venv/
 .optio/
 *.optio.json
 
+# graphify knowledge-graph outputs
+graphify-out/
+
 # OS / editor
 .DS_Store
 *.swp

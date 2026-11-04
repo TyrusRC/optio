@@ -18,6 +18,11 @@ import threading
 import time
 from pathlib import Path
 
+# The statuses a finding may hold. 'suspected' is the default lead; only
+# 'confirmed' reaches the client report (see report.py). set_finding_status
+# validates against this set so a bad API payload can't write garbage.
+FINDING_STATUSES = ("suspected", "confirmed", "false_positive", "fixed")
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS targets (
     name          TEXT PRIMARY KEY,
@@ -167,6 +172,14 @@ class Store:
                              (json.dumps(config or {}), name))
             self._db.commit()
 
+    def set_proxy(self, name: str, proxy: str) -> None:
+        """Set the per-target proxy — applied to both tool subprocesses (via
+        HTTP(S)_PROXY) and the request runner, so all traffic can route through
+        an intercepting proxy like Burp."""
+        with self._lock:
+            self._db.execute("UPDATE targets SET proxy=? WHERE name=?", (proxy or "", name))
+            self._db.commit()
+
     @staticmethod
     def _target_row(row: sqlite3.Row) -> dict:
         d = dict(row)
@@ -243,9 +256,15 @@ class Store:
         return findings
 
     def set_finding_status(self, finding_id: int, status: str) -> None:
+        if status not in FINDING_STATUSES:
+            raise ValueError(
+                f"invalid status {status!r}; expected one of {', '.join(FINDING_STATUSES)}")
         with self._lock:
-            self._db.execute("UPDATE findings SET status=? WHERE id=?", (status, finding_id))
+            cur = self._db.execute(
+                "UPDATE findings SET status=? WHERE id=?", (status, finding_id))
             self._db.commit()
+            if cur.rowcount == 0:
+                raise KeyError(f"no finding {finding_id}")
 
     # ── captured requests (durable evidence) ─────────────────────────────────
     def record_request(self, target: str, method: str, url: str,

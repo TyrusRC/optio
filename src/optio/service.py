@@ -8,8 +8,10 @@ the HTTP layer (``optio.api``) in front of it.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from dataclasses import asdict
+from urllib.parse import urlsplit
 
 from optio import haruspex, http, paths, report
 from optio.advisor import class_coverage, rerank, suggest
@@ -33,6 +35,14 @@ _SEV_ORDER = ["critical", "high", "medium", "low"]  # worst first, for graph nod
 
 def _haruspex_ranker(options: list[str], target: str, tech: str) -> list[str] | None:
     return haruspex.rank_candidates(_RANK_QUESTION, options, target=target, domain=tech)
+
+
+def _endpoint_value(url: str) -> str:
+    """``host/path`` (no scheme, no query) for a surface-graph endpoint node.
+    A bare root path collapses to the host so '/' requests map to the host node."""
+    s = urlsplit(url if "://" in url else "https://" + url)
+    path = (s.path or "").rstrip("/")
+    return f"{s.netloc}{path}" if path else s.netloc
 
 
 class OptioService:
@@ -69,18 +79,49 @@ class OptioService:
         return self.store.get_target(name)
 
     def get_config(self, name: str) -> dict:
-        return (self.store.get_target(name) or {}).get("config") or {}
+        t = self.store.get_target(name) or {}
+        cfg = dict(t.get("config") or {})
+        cfg["proxy"] = t.get("proxy") or ""        # proxy lives on the target row
+        return cfg
 
     def set_config(self, name: str, config: dict) -> dict:
-        self.store.set_config(name, config)
-        return config
+        """Per-target config. ``proxy`` is stored on the target row (so tools and
+        the request runner both use it); the rest — ``headers``, ``user_agent``,
+        ``verify_tls`` — lives in the config blob."""
+        cfg = dict(config or {})
+        proxy = cfg.pop("proxy", None)
+        if proxy is not None:
+            self.store.set_proxy(name, proxy)
+        self.store.set_config(name, cfg)
+        return self.get_config(name)
 
     # ── catalog / pipelines ───────────────────────────────────────────────
     def catalog_list(self) -> list[dict]:
-        return [asdict(t) for t in self.catalog]
+        # `installed` lets the UI flag tools whose binary is not on PATH before
+        # the operator runs one (and hits a 127). which() is cheap and cached.
+        out = []
+        for t in self.catalog:
+            d = asdict(t)
+            d["installed"] = shutil.which(t.binary) is not None
+            out.append(d)
+        return out
 
     def pipeline_list(self) -> list[dict]:
         return [asdict(p) for p in self.pipelines]
+
+    def preview_command(self, name: str, tool: str) -> dict:
+        """The exact command Optio would run for ``tool`` — flag memory if set,
+        else the template partially filled from the target (unfilled ``{fields}``
+        left literal). Lets the operator see and edit the line before it fires."""
+        t = self._by_name.get(tool)
+        if t is None:
+            return {"error": f"unknown tool: {tool}"}
+        tvals = target_values(name)
+        remembered = self.store.get_flags(name, tool)
+        command = remembered or t.render_partial(tvals)
+        return {"tool": tool, "command": command,
+                "remembered": bool(remembered),
+                "missing": [] if remembered else t.missing_placeholders(tvals)}
 
     # ── coverage / advice ──────────────────────────────────────────────────
     def coverage(self, name: str) -> dict:
@@ -142,11 +183,15 @@ class OptioService:
     # ── request runner (standalone repeater) ─────────────────────────────────
     def send_request(self, name: str, method: str, url: str,
                      headers: dict | None = None, body: str = "",
-                     proxy: str | None = None, verify: bool = True) -> dict:
+                     proxy: str | None = None, verify: bool | None = None) -> dict:
         target = self.store.get_target(name) or {}
         proxy = proxy or target.get("proxy") or None
         # Merge per-target config: default headers + User-Agent. Caller wins.
         cfg = target.get("config") or {}
+        # TLS verification: explicit arg wins, else the target's configured
+        # default, else on. Routing through Burp usually means verify_tls:false.
+        if verify is None:
+            verify = cfg.get("verify_tls", True)
         merged = dict(cfg.get("headers") or {})
         if cfg.get("user_agent"):
             merged.setdefault("User-Agent", cfg["user_agent"])
@@ -162,7 +207,7 @@ class OptioService:
                 "error": resp.error}
 
     def send_raw(self, name: str, raw: str, scheme: str = "https",
-                 proxy: str | None = None, verify: bool = True) -> dict:
+                 proxy: str | None = None, verify: bool | None = None) -> dict:
         try:
             method, url, headers, body = http.parse_raw(raw, scheme=scheme)
         except ValueError as e:
@@ -176,6 +221,33 @@ class OptioService:
     def get_request(self, request_id: int) -> dict | None:
         return self.store.get_request(request_id)
 
+    def ingest_request(self, payload: dict) -> dict:
+        """Ingest one request/response captured elsewhere — e.g. forwarded live
+        from Burp. Associates it with a target (the caller's ``target``, else the
+        URL host, auto-creating it), records it as a captured request, and seeds
+        the surface graph with the host + endpoint. Fail-soft: a malformed item
+        returns an error rather than raising, so a noisy feed never crashes."""
+        url = (payload.get("url") or "").strip()
+        if not url:
+            return {"error": "url is required"}
+        name = (payload.get("target") or "").strip() or target_values(url)["host"]
+        if not name:
+            return {"error": "could not determine a target from the request"}
+        if self.store.get_target(name) is None:
+            self.store.add_target(name)
+        rid = self.store.record_request(
+            name, method=payload.get("method", "GET"), url=url,
+            req_headers=payload.get("req_headers") or {}, req_body=payload.get("req_body", ""),
+            status=int(payload.get("status") or 0),
+            resp_headers=payload.get("resp_headers") or {}, resp_body=payload.get("resp_body", ""),
+            elapsed_ms=int(payload.get("elapsed_ms") or 0))
+        host = target_values(url)["host"]
+        host_id = self.store.add_asset(name, "host", host)
+        endpoint = _endpoint_value(url)
+        if endpoint and endpoint != host:
+            self.store.add_asset(name, "endpoint", endpoint, parent_id=host_id)
+        return {"request_id": rid, "target": name}
+
     # ── findings ────────────────────────────────────────────────────────────
     def findings(self, name: str) -> list[dict]:
         return self.store.findings_for_target(name)
@@ -183,6 +255,13 @@ class OptioService:
     def add_finding(self, name: str, **kw) -> dict:
         fid = self.store.add_finding(name, **kw)
         return {"id": fid, **kw}
+
+    def set_finding_status(self, finding_id: int, status: str) -> dict:
+        """Promote/demote a finding (e.g. ``suspected`` -> ``confirmed``). Only
+        confirmed findings reach the client report, so this is the gate between
+        bookkeeping and the deliverable."""
+        self.store.set_finding_status(finding_id, status)
+        return {"id": finding_id, "status": status}
 
     # ── attack surface (the graph) ───────────────────────────────────────────
     def record_asset(self, name: str, kind: str, value: str,

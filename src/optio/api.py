@@ -5,6 +5,9 @@ routes back both the web UI (``optio.web`` serves the SPA over them) and any
 script or CI client. Routes:
 
     GET  /health
+    POST /ingest                       {url, method?, target?, req_headers?, req_body?,
+                                        status?, resp_headers?, resp_body?, elapsed_ms?}
+                                        -> ingest forwarded traffic (e.g. live from Burp)
     GET  /targets                      list targets
     POST /targets                      {name, tech?, notes?, proxy?}
     GET  /targets/{name}               one target
@@ -21,11 +24,13 @@ script or CI client. Routes:
     POST /targets/{name}/findings      {title, vuln_class?, endpoint?, severity?,
                                         status?, impact?, remediation?, cwe?, cvss?,
                                         reproduction?, evidence_request_id?}
+    POST /targets/{name}/findings/{id}/status  {status}  -> confirm/promote a finding
     POST /targets/{name}/request       {method, url, headers?, body?, proxy?, verify?}
     POST /targets/{name}/request-raw   {raw, scheme?, proxy?, verify?}  -> send a raw request
     GET  /targets/{name}/requests      captured requests (durable evidence)
     GET  /targets/{name}/requests/{id} one captured request/response
     GET  /targets/{name}/report        {markdown} client report (confirmed findings)
+    POST /targets/{name}/preview-command  {tool}  -> the exact command, editable before run
     POST /targets/{name}/run           {tool, command?, proxy?}  -> runs a tool
     POST /targets/{name}/run-pipeline  {pipeline}                -> runs a chain
     POST /targets/{name}/auto-run      {max_steps?, phases?}     -> smart early flow
@@ -62,10 +67,20 @@ def _route(svc: OptioService, method: str, path: str, body: dict):
         if one is None:
             raise _NotFound(f"no request {rq.group(2)}")
         return one
+    # /targets/{name}/findings/{id}/status  -> confirm/promote a finding
+    fs = re.fullmatch(r"/targets/([^/]+)/findings/(\d+)/status", path)
+    if fs and method == "POST":
+        if not body.get("status"):
+            raise _BadRequest("status is required")
+        return svc.set_finding_status(int(fs.group(2)), body["status"])
     # /targets/{name}/...
     m = re.fullmatch(r"/targets/([^/]+)(?:/(\w[\w-]*))?", path)
     if path == "/health":
         return {"ok": True}
+    if path == "/ingest" and method == "POST":
+        # Live traffic forwarded from an intercepting proxy (e.g. a Burp
+        # extension). Associates to a target by host and seeds the surface.
+        return svc.ingest_request(body)
     if path == "/catalog":
         return svc.catalog_list()
     if path == "/pipelines":
@@ -142,12 +157,16 @@ def _route(svc: OptioService, method: str, path: str, body: dict):
                 raise _BadRequest("url is required")
             return svc.send_request(name, body.get("method", "GET"), body["url"],
                                     headers=body.get("headers"), body=body.get("body", ""),
-                                    proxy=body.get("proxy"), verify=body.get("verify", True))
+                                    proxy=body.get("proxy"), verify=body.get("verify"))
         if sub == "request-raw" and method == "POST":
             if not body.get("raw"):
                 raise _BadRequest("raw is required")
             return svc.send_raw(name, body["raw"], scheme=body.get("scheme", "https"),
-                                proxy=body.get("proxy"), verify=body.get("verify", True))
+                                proxy=body.get("proxy"), verify=body.get("verify"))
+        if sub == "preview-command" and method == "POST":
+            if not body.get("tool"):
+                raise _BadRequest("tool is required")
+            return svc.preview_command(name, body["tool"])
         if sub == "run" and method == "POST":
             if not body.get("tool"):
                 raise _BadRequest("tool is required")
