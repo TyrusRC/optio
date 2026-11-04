@@ -49,10 +49,19 @@ None carries all three for *your own* toolset. Optio does.
   store as durable evidence — a finding cites a saved capture, not a volatile
   proxy index that disappears when the proxy restarts.
 - **Findings become a report.** A finding carries impact, remediation, CWE, CVSS,
-  reproduction, and a linked evidence capture, and renders to a client report
-  (confirmed findings only, no activity counts).
+  reproduction, and a linked evidence capture. You promote it from *suspected* to
+  *confirmed*; only confirmed findings reach the client report (no activity counts).
 - **Pipelines.** Run a named chain of tools in one click (`recon-sweep`,
   `web-scan`, `full-web`, `network`, …) to cut the manual per-tool loop.
+- **Long scans never block you.** Tools, pipelines, and auto-run run in the
+  background: the command fires, the status shows elapsed time, and a **Cancel**
+  button stops it — killing the whole process tree (a DAST and the helpers it
+  spawns), not just the parent.
+- **Burp Suite, both directions.** Route Optio's tools and request runner through
+  Burp (a per-target proxy, one click in Config), and/or sync Burp → Optio: a
+  bundled extension — or any `POST /ingest` — forwards in-scope traffic, which
+  Optio records as evidence and grows the attack-surface graph from. See
+  [`integrations/burp/`](integrations/burp/).
 - **Standalone.** Nothing to install but your own tools. Route traffic through a
   proxy you already run (e.g. Burp) if you want — none is required.
 - **Optional hint.** If a local [Haruspex](https://github.com/TyrusRC/haruspex)
@@ -97,8 +106,9 @@ silently missed the way a tool-only checklist misses them.
   it never gates you.
 - **Auto-run.** One click walks recon → surface → scan for you, in value order,
   and stops before the probe phase so you decide the targeted tests.
-- **Config.** Set custom headers and a User-Agent per target; every request the
-  runner sends inherits them (explicit per-request headers still win).
+- **Config.** Set a proxy (e.g. Burp), TLS verification, custom headers, and a
+  User-Agent per target; the request runner and the tools Optio launches inherit
+  them (explicit per-request headers still win).
 - The graph library (Cytoscape.js) is vendored under
   `src/optio/web/static/vendor/` (MIT) — the UI works offline. The server binds
   to loopback.
@@ -115,11 +125,15 @@ The same `uv run optio` server exposes a JSON API on the same port (stdlib
 ```sh
 curl -s localhost:8788/targets -d '{"name":"ex.com","tech":["php"]}'
 curl -s localhost:8788/targets/ex.com/next           # ranked next actions
-curl -s localhost:8788/targets/ex.com/auto-run -d '{}'          # smart early flow
-curl -s localhost:8788/targets/ex.com/run -d '{"tool":"nuclei"}'
+curl -s localhost:8788/targets/ex.com/auto-run -d '{}'          # smart early flow (blocking)
+curl -s localhost:8788/targets/ex.com/run -d '{"tool":"nuclei"}'          # blocking
+curl -s localhost:8788/targets/ex.com/run-async -d '{"tool":"nuclei"}'    # -> {job_id}, non-blocking
+curl -s localhost:8788/jobs/<id>                     # run status: {status, elapsed_ms, results}
+curl -s localhost:8788/jobs/<id>/cancel -d '{}'      # stop a run (kills the process tree)
 curl -s localhost:8788/targets/ex.com/surface        # attack-surface graph
 curl -s localhost:8788/targets/ex.com/coverage-classes          # what to find
 curl -s localhost:8788/targets/ex.com/request -d '{"method":"GET","url":"https://ex.com/"}'
+curl -s localhost:8788/ingest -d '{"method":"GET","url":"https://ex.com/login","status":200}'  # Burp/any proxy -> surface
 curl -s localhost:8788/targets/ex.com/findings
 curl -s localhost:8788/targets/ex.com/report         # {markdown} client report
 ```
@@ -134,12 +148,14 @@ by-class "what to find" board; the next-action advisor (a value-ordered,
 findings-first ladder that skips domain-only tools on a bare IP and is re-ranked
 automatically by Haruspex when it is up); coverage tracked by vuln class
 (tool-less classes included); smart
-auto-run; flag memory; a subprocess runner with optional proxy; a built-in HTTP
-request runner with durable request/response capture; per-target custom
-headers/User-Agent; pipelines; findings that carry impact/CVSS/evidence and
-render to a client report; and a catalog of ~70 tools (with `vigil` and `groma`
-as the default web and network scanners). Add your own in
-`~/.config/optio/catalog/`. The catalog format and the UI will still change.
+auto-run; flag memory; a subprocess runner with optional proxy; background runs
+that are non-blocking, show progress, and can be cancelled (killing the process
+tree); a built-in HTTP request runner with durable request/response capture;
+bidirectional Burp integration (route out, sync in via `/ingest`); per-target
+proxy/TLS/headers/User-Agent; pipelines; findings that carry impact/CVSS/evidence,
+promote suspected → confirmed, and render to a client report; and a catalog of
+~70 tools (with `vigil` and `groma` as the default web and network scanners). Add
+your own in `~/.config/optio/catalog/`. The catalog format and the UI will still change.
 
 ## Contributing
 
