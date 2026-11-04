@@ -15,6 +15,8 @@ button, select, input, textarea {
   background: #1f2630; color: var(--text); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 9px; font: inherit; cursor: pointer; }
 button:hover { border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
 .ico { width: 13px; height: 13px; fill: currentColor; vertical-align: -1px; margin-right: 4px; }
 #btn-auto { color: var(--med); }
 input, textarea, select { cursor: text; }
@@ -55,7 +57,76 @@ td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top
 .finding .sev { font-weight: 700; }
 .sev.critical { color: var(--crit); } .sev.high { color: var(--high); }
 .sev.medium { color: var(--med); } .sev.low { color: var(--low); }
-.hidden { display: none; }
+/* Utility: !important so it wins over id-specificity rules like #modal{display:flex}. */
+.hidden { display: none !important; }
+
+/* add-finding form (Findings tab) */
+#finding-form { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+#finding-form input, #finding-form textarea, #finding-form select { width: 100%; }
+#finding-form .form-row { flex-direction: row; display: flex; gap: 6px; }
+#f-impact { height: 56px; font: inherit; }
+.form-actions { display: flex; gap: 8px; }
+.btn-primary { background: var(--accent); color: #04121f; border-color: var(--accent); font-weight: 600; }
+
+/* finding status control */
+.finding .finding-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.finding select { font-size: 11px; padding: 1px 4px; }
+.finding.confirmed { border-color: var(--low); }
+
+/* captured requests */
+.req-row { display: flex; align-items: center; gap: 8px; padding: 5px 0;
+  border-bottom: 1px solid var(--line); cursor: pointer; }
+.req-row:hover { color: var(--accent); }
+.req-row .code { font-weight: 700; } .req-row .code.ok { color: var(--low); }
+.req-row .code.err { color: var(--high); } .req-row .code.cli { color: var(--crit); }
+#request-detail { margin-top: 10px; }
+#request-detail pre { white-space: pre-wrap; word-break: break-all; background: #0b0e13;
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+  font: 12px ui-monospace, monospace; max-height: 240px; overflow: auto; }
+
+/* onboarding empty-state (no target yet) */
+#onboard { position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; }
+#onboard h1 { color: var(--accent); letter-spacing: 2px; margin: 0; font-size: 40px; }
+#onboard p { margin: 0; max-width: 460px; } #onboard .btn-primary { margin-top: 8px; padding: 8px 14px; }
+
+/* proxy indicator + loading */
+#proxy-ind { font-size: 12px; color: var(--med); border: 1px solid var(--med);
+  border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+#status.loading::after { content: ""; display: inline-block; width: 9px; height: 9px;
+  margin-left: 6px; border: 2px solid var(--muted); border-top-color: transparent;
+  border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* run tab: tool groups + badges + pipelines */
+.lane-head { font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin: 12px 0 2px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+.chk { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; margin: 6px 0; }
+.chk input { width: auto; cursor: pointer; }
+.badge { font-size: 10px; border-radius: 8px; padding: 0 6px; font-weight: 600; margin-left: 6px; }
+.badge.ran { background: #27343f; color: #9fd0ff; } .badge.missing { background: #3b2a2a; color: #f0a6a6; }
+.pipe { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pipe .btn-primary { padding: 3px 10px; }
+.row.off { opacity: .5; }
+
+/* config modal fields */
+#config-modal .fld { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+#config-modal .fld input, #config-modal .fld textarea { width: 100%; margin-top: 3px;
+  color: var(--text); }
+#config-modal textarea { height: 70px; font: 12px ui-monospace, monospace; }
+#config-modal code { background: #0b0e13; padding: 0 3px; border-radius: 3px; }
+
+/* single-line modal input (add target, command edit) */
+#modal-input.short { height: 44px; white-space: pre; }
+
+/* rendered report */
+#report-modal .report-body { background: var(--bg); max-height: 70vh; overflow: auto; padding: 4px 2px; }
+.report-body h1 { font-size: 20px; } .report-body h2 { font-size: 16px; margin-top: 16px; }
+.report-body h3 { font-size: 14px; color: var(--text); }
+.report-body pre { background: #0b0e13; border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px; overflow: auto; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+.report-body code { background: #0b0e13; padding: 0 3px; border-radius: 3px; }
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55);
   display: flex; align-items: center; justify-content: center; }
 #modal-box { background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
