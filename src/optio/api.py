@@ -31,9 +31,13 @@ script or CI client. Routes:
     GET  /targets/{name}/requests/{id} one captured request/response
     GET  /targets/{name}/report        {markdown} client report (confirmed findings)
     POST /targets/{name}/preview-command  {tool}  -> the exact command, editable before run
-    POST /targets/{name}/run           {tool, command?, proxy?}  -> runs a tool
-    POST /targets/{name}/run-pipeline  {pipeline}                -> runs a chain
+    POST /targets/{name}/run           {tool, command?, proxy?}  -> runs a tool (blocking)
+    POST /targets/{name}/run-async     {tool, command?, proxy?}  -> starts a tool, returns {job_id}
+    POST /targets/{name}/run-pipeline  {pipeline}                -> runs a chain (blocking)
+    POST /targets/{name}/run-pipeline-async {pipeline}           -> starts a chain, returns {job_id}
     POST /targets/{name}/auto-run      {max_steps?, phases?}     -> smart early flow
+    GET  /jobs/{id}                    async run status {status, elapsed_ms, results, ...}
+    POST /jobs/{id}/cancel             cancel a running job (kills the process group)
     GET  /catalog                      catalog tools
     GET  /pipelines                    pipelines
 
@@ -73,6 +77,19 @@ def _route(svc: OptioService, method: str, path: str, body: dict):
         if not body.get("status"):
             raise _BadRequest("status is required")
         return svc.set_finding_status(int(fs.group(2)), body["status"])
+    # /jobs/{id}  (GET status) and /jobs/{id}/cancel (POST) -> async runs
+    jc = re.fullmatch(r"/jobs/([0-9a-f]+)/cancel", path)
+    if jc and method == "POST":
+        res = svc.cancel_job(jc.group(1))
+        if res is None:
+            raise _NotFound(f"no job {jc.group(1)}")
+        return res
+    jb = re.fullmatch(r"/jobs/([0-9a-f]+)", path)
+    if jb and method == "GET":
+        res = svc.job_status(jb.group(1))
+        if res is None:
+            raise _NotFound(f"no job {jb.group(1)}")
+        return res
     # /targets/{name}/...
     m = re.fullmatch(r"/targets/([^/]+)(?:/(\w[\w-]*))?", path)
     if path == "/health":
@@ -172,16 +189,27 @@ def _route(svc: OptioService, method: str, path: str, body: dict):
                 raise _BadRequest("tool is required")
             return svc.run_tool(name, body["tool"], command=body.get("command"),
                                 proxy=body.get("proxy"))
+        if sub == "run-async" and method == "POST":
+            if not body.get("tool"):
+                raise _BadRequest("tool is required")
+            return svc.run_tool_async(name, body["tool"], command=body.get("command"),
+                                      proxy=body.get("proxy"))
         if sub == "run-pipeline" and method == "POST":
             if not body.get("pipeline"):
                 raise _BadRequest("pipeline is required")
             return svc.run_pipeline(name, body["pipeline"])
-        if sub == "auto-run" and method == "POST":
+        if sub == "run-pipeline-async" and method == "POST":
+            if not body.get("pipeline"):
+                raise _BadRequest("pipeline is required")
+            return svc.run_pipeline_async(name, body["pipeline"])
+        if sub in ("auto-run", "auto-run-async") and method == "POST":
             kw = {}
             if body.get("max_steps"):
                 kw["max_steps"] = int(body["max_steps"])
             if body.get("phases"):
                 kw["phases"] = tuple(body["phases"])
+            if sub == "auto-run-async":
+                return svc.auto_run_async(name, **kw)
             return svc.auto_run(name, **kw)
     raise _NotFound(f"no route {method} {path}")
 

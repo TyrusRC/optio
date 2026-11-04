@@ -22,6 +22,7 @@ from optio.executor import RunResult
 from optio.executor import run as _run
 from optio.flow import phase_rank
 from optio.pipeline import build_command, load_default_pipelines, load_pipelines, run_pipeline
+from optio.runs import JobManager
 from optio.store import Store
 from optio.summarize import summarize
 
@@ -54,6 +55,7 @@ class OptioService:
         self.store = store
         self.runner = runner
         self.http_send = http_send
+        self.jobs = JobManager()   # background runs: non-blocking, pollable, cancellable
         # Haruspex rides the flow automatically (fail-open). Tests inject a
         # ranker that abstains to isolate the deterministic ladder.
         self.ranker = ranker
@@ -192,6 +194,61 @@ class OptioService:
         )
         return [asdict(r) for r in results]
 
+    # ── async runs (non-blocking, pollable, cancellable) ──────────────────────
+    def run_tool_async(self, name: str, tool: str, command: str | None = None,
+                       proxy: str | None = None) -> dict:
+        """Start a tool run in the background and return a job id at once. The UI
+        polls ``job_status`` for progress and can ``cancel_job`` it. Records the
+        result exactly like the synchronous ``run_tool`` when it finishes."""
+        t = self._by_name.get(tool)
+        if t is None:
+            return {"error": f"unknown tool: {tool}"}
+        tvals = target_values(name)
+        if not command:
+            command, reason = build_command(t, tvals, lambda n: self.store.get_flags(name, n))
+            if command is None:
+                return {"error": reason, "tool": tool}
+        proxy = proxy or (self.store.get_target(name) or {}).get("proxy") or None
+        cwd = self._run_cwd(name)
+
+        def work(job):
+            result = self.runner(command, proxy, cwd=cwd, on_start=job.set_proc)
+            summary = summarize(tool, result.exit_code, result.output)
+            self.store.record_run(name, tool, command, result.exit_code, summary)
+            self.store.save_flags(name, tool, command)
+            job.results.append({"tool": tool, "command": command,
+                                "exit_code": result.exit_code, "summary": summary})
+
+        job = self.jobs.submit("tool", tool, work)
+        return {"job_id": job.id, "tool": tool, "command": command}
+
+    def run_pipeline_async(self, name: str, pipeline: str) -> dict:
+        pipe = next((p for p in self.pipelines if p.name == pipeline), None)
+        if pipe is None:
+            return {"error": f"unknown pipeline: {pipeline}"}
+        tvals = target_values(name)
+        proxy = (self.store.get_target(name) or {}).get("proxy") or None
+        cwd = self._run_cwd(name)
+
+        def work(job):
+            results = run_pipeline(
+                pipe, self._by_name, tvals,
+                flag_lookup=lambda n: self.store.get_flags(name, n),
+                runner=lambda c: self.runner(c, proxy, cwd=cwd, on_start=job.set_proc),
+                recorder=lambda tl, cmd, code, summ: self.store.record_run(name, tl, cmd, code, summ),
+                cancelled=job.cancelled,
+            )
+            job.results.extend(asdict(r) for r in results)
+
+        job = self.jobs.submit("pipeline", pipeline, work)
+        return {"job_id": job.id, "pipeline": pipeline}
+
+    def job_status(self, job_id: str) -> dict | None:
+        return self.jobs.get(job_id)
+
+    def cancel_job(self, job_id: str) -> dict | None:
+        return self.jobs.cancel(job_id)
+
     # ── request runner (standalone repeater) ─────────────────────────────────
     def send_request(self, name: str, method: str, url: str,
                      headers: dict | None = None, body: str = "",
@@ -306,11 +363,15 @@ class OptioService:
 
     # ── smart auto-run ────────────────────────────────────────────────────────
     def auto_run(self, name: str, max_steps: int = 25,
-                 phases: tuple[str, ...] = ("recon", "surface", "scan")) -> dict:
+                 phases: tuple[str, ...] = ("recon", "surface", "scan"),
+                 on_start=None, cancelled=lambda: False) -> dict:
         """Run the early flow unattended, in the advisor's value order, to save
         time. Walks ``phases`` (recon -> surface -> scan by default), runs each
         tool whose command can be filled from the target, and stops before the
         probe phase. A tool with an unfilled placeholder is skipped, not retried.
+
+        ``on_start``/``cancelled`` let the async wrapper register each subprocess
+        and stop the walk between steps when the operator cancels.
         """
         target = self.store.get_target(name) or {}
         tech = target.get("tech") or ["default"]
@@ -320,6 +381,8 @@ class OptioService:
         virtual_run = set(self.store.tools_run_for_target(name))
         steps: list[dict] = []
         for _ in range(max_steps):
+            if cancelled():
+                break
             sugs = suggest(self.catalog, tech, virtual_run, findings, tvals, max_suggestions=50)
             nxt = next((s for s in sugs if s.tool and s.phase in phases), None)
             if nxt is None:
@@ -330,7 +393,7 @@ class OptioService:
                 virtual_run.add(nxt.tool)
                 steps.append({"tool": nxt.tool, "skipped": reason})
                 continue
-            result = self.runner(command, proxy, cwd=self._run_cwd(name))
+            result = self.runner(command, proxy, cwd=self._run_cwd(name), on_start=on_start)
             summary = summarize(nxt.tool, result.exit_code, result.output)
             self.store.record_run(name, nxt.tool, command, result.exit_code, summary)
             self.store.save_flags(name, nxt.tool, command)
@@ -338,6 +401,15 @@ class OptioService:
             steps.append({"tool": nxt.tool, "command": command,
                           "exit_code": result.exit_code, "summary": summary})
         return {"steps": steps}
+
+    def auto_run_async(self, name: str, max_steps: int = 25,
+                       phases: tuple[str, ...] = ("recon", "surface", "scan")) -> dict:
+        def work(job):
+            out = self.auto_run(name, max_steps=max_steps, phases=phases,
+                                on_start=job.set_proc, cancelled=job.cancelled)
+            job.results.extend(out["steps"])
+        job = self.jobs.submit("auto-run", "auto-run", work)
+        return {"job_id": job.id}
 
     # ── coverage by vuln class ───────────────────────────────────────────────
     def coverage_board(self, name: str) -> list[dict]:

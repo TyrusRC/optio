@@ -385,6 +385,55 @@ function renderRunners() {
 $("#tool-filter").oninput = renderRunners;
 $("#tool-installed-only").onchange = renderRunners;
 
+// ── background jobs: run async, poll for progress, allow cancel ────────────────
+// A scan can take tens of minutes — we never block the UI on it. Start the job,
+// poll its status (showing elapsed time), and let the operator cancel.
+let ACTIVE_JOB = null, JOB_TIMER = null;
+function fmtElapsed(ms) {
+  const s = Math.round((ms || 0) / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+}
+function endJob(msg) {
+  ACTIVE_JOB = null;
+  if (JOB_TIMER) { clearTimeout(JOB_TIMER); JOB_TIMER = null; }
+  $("#status").classList.remove("loading");
+  $("#btn-cancel").classList.add("hidden");
+  setStatus(msg);
+}
+function trackJob(jobId, label) {
+  ACTIVE_JOB = jobId;
+  $("#status").classList.add("loading");
+  $("#btn-cancel").classList.remove("hidden");
+  const poll = async () => {
+    if (ACTIVE_JOB !== jobId) return;           // superseded by a newer run
+    let st;
+    try { st = await api("GET", `/jobs/${jobId}`); }
+    catch (e) { endJob("error: " + e.message); return; }
+    if (st.status === "running") {
+      setStatus(`running ${label}… ${fmtElapsed(st.elapsed_ms)}  (Cancel to stop)`);
+      JOB_TIMER = setTimeout(poll, 1300);
+      return;
+    }
+    const steps = st.results || [];
+    const ran = steps.filter((s) => s.command && !s.skipped).length;
+    let msg;
+    if (st.status === "cancelled") msg = `${label}: cancelled after ${fmtElapsed(st.elapsed_ms)}`;
+    else if (st.status === "failed") msg = `${label}: failed — ${st.error || "error"}`;
+    else if (st.kind === "tool") {
+      const r = steps[steps.length - 1] || {};
+      msg = `${label}: done — exit ${r.exit_code}${r.summary ? " · " + r.summary : ""}`;
+    } else msg = `${label}: done — ${ran} ran in ${fmtElapsed(st.elapsed_ms)}`;
+    await refresh();   // refresh first (it clears the status), then show the outcome so it persists
+    endJob(msg);
+  };
+  poll();
+}
+$("#btn-cancel").onclick = async () => {
+  if (!ACTIVE_JOB) return;
+  try { await api("POST", `/jobs/${ACTIVE_JOB}/cancel`); setStatus("cancelling…"); }
+  catch (e) { setStatus("error: " + e.message); }
+};
+
 // Preview the exact command (flag memory or template), let the operator edit it,
 // then run. Nothing fires at the target until they confirm — scope safety.
 async function runTool(tool) {
@@ -397,18 +446,19 @@ async function runTool(tool) {
     ? `   ⚠ fill in: ${prev.missing.join(", ")}` : "";
   const command = await prompt(`Run ${tool} — review / edit the command${note}`, prev.command, { short: true });
   if (command === null || !command.trim()) return;
-  await busy(`running ${tool}`, async () => {
-    const out = await api("POST", `/targets/${enc(TARGET)}/run`, { tool, command: command.trim() });
-    if (out.error) throw new Error(out.error);
-    setStatus(`${tool}: exit ${out.exit_code}${out.summary ? " — " + out.summary : ""}`);
-  });
-  await refresh();
+  let out;
+  try { out = await api("POST", `/targets/${enc(TARGET)}/run-async`, { tool, command: command.trim() }); }
+  catch (e) { setStatus("error: " + e.message); return; }
+  if (out.error) { setStatus("error: " + out.error); return; }
+  trackJob(out.job_id, tool);
 }
 async function runPipeline(name) {
   if (!TARGET) return;
-  await busy(`pipeline ${name}`, () =>
-    api("POST", `/targets/${enc(TARGET)}/run-pipeline`, { pipeline: name }));
-  await refresh();
+  let out;
+  try { out = await api("POST", `/targets/${enc(TARGET)}/run-pipeline-async`, { pipeline: name }); }
+  catch (e) { setStatus("error: " + e.message); return; }
+  if (out.error) { setStatus("error: " + out.error); return; }
+  trackJob(out.job_id, "pipeline " + name);
 }
 
 // ── request runner + report ───────────────────────────────────────────────────
@@ -430,13 +480,11 @@ $("#btn-request").onclick = async () => {
 
 $("#btn-auto").onclick = async () => {
   if (!TARGET) return;
-  await busy("auto-running flow", async () => {
-    const out = await api("POST", `/targets/${enc(TARGET)}/auto-run`, {});
-    const ran = out.steps.filter((s) => s.command).length;
-    const skipped = out.steps.filter((s) => s.skipped).length;
-    setStatus(`auto-run: ${ran} ran, ${skipped} skipped`);
-  });
-  await refresh();
+  let out;
+  try { out = await api("POST", `/targets/${enc(TARGET)}/auto-run-async`, {}); }
+  catch (e) { setStatus("error: " + e.message); return; }
+  if (out.error) { setStatus("error: " + out.error); return; }
+  trackJob(out.job_id, "auto-run");
 };
 
 // ── config (structured: proxy, TLS, User-Agent, headers) ────────────────────────

@@ -8,7 +8,7 @@ from optio.store import Store
 
 
 def _fake_runner(calls):
-    def runner(command, proxy=None, cwd=None):
+    def runner(command, proxy=None, cwd=None, on_start=None):
         calls.append((command, proxy))
         return RunResult(exit_code=0, output=f"ran: {command}")
     return runner

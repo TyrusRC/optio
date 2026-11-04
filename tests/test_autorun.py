@@ -29,7 +29,7 @@ def _svc(tmp_path):
     s = Store(tmp_path / "t.db")
     s.add_target("ex.com", tech=["php"])
 
-    def runner(command, proxy=None, cwd=None):
+    def runner(command, proxy=None, cwd=None, on_start=None):
         from optio.executor import RunResult
         ran.append(command)
         return RunResult(exit_code=0, output="ok")

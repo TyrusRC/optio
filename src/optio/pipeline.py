@@ -89,9 +89,12 @@ def run_pipeline(
     runner: Callable[[str], RunResult],
     recorder: Callable[[str, str, int | None, str], None] | None = None,
     summarizer: Callable[[str, int, str], str] = summarize,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> list[StepResult]:
     results: list[StepResult] = []
     for name in pipeline.steps:
+        if cancelled():  # a cancel between steps stops the chain cleanly
+            break
         tool = tools_by_name.get(name)
         if tool is None:
             results.append(StepResult(name, "", None, f"{name}: unknown tool",

@@ -16,7 +16,7 @@ from optio.service import OptioService
 from optio.store import Store
 
 
-def _fake_runner(command, proxy=None, cwd=None):
+def _fake_runner(command, proxy=None, cwd=None, on_start=None):
     return RunResult(exit_code=0, output=f"ran: {command}")
 
 
@@ -186,3 +186,25 @@ def test_ingest_creates_target_records_request_and_seeds_surface(server):
 def test_ingest_requires_url(server):
     _, res = _req(server, "POST", "/ingest", {"method": "GET"})
     assert "error" in res
+
+
+def test_run_async_returns_a_job_that_completes_over_http(server):
+    import time
+    _req(server, "POST", "/targets", {"name": "ex.com"})
+    _, started = _req(server, "POST", "/targets/ex.com/run-async",
+                      {"tool": "subfinder", "command": "echo hi"})
+    assert "job_id" in started  # returns at once, not after the run
+    st = {"status": "running"}
+    for _ in range(60):
+        _, st = _req(server, "GET", f"/jobs/{started['job_id']}")
+        if st["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert st["status"] == "done"
+    assert st["results"][0]["exit_code"] == 0
+
+
+def test_job_status_unknown_is_404(server):
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _req(server, "GET", "/jobs/deadbeef0000")
+    assert exc.value.code == 404
